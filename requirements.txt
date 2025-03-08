@@ -10,4 +10,5 @@ bitsandbytes==0.41.3
 sentence-transformers==2.2.2
 python-dotenv==1.0.0
 tqdm==4.66.1
-colorlog==6.7.0 
+colorlog==6.7.0
+nvidia-ml-py3==7.352.0 
