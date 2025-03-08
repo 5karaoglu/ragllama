@@ -172,13 +172,40 @@ def setup_embedding_model():
     # Cache dizinini oluştur
     os.makedirs(cache_dir, exist_ok=True)
     
-    embed_model = HuggingFaceEmbedding(
-        model_name=model_name,
-        cache_dir=cache_dir
-    )
-    
-    logger.info("Embedding modeli başarıyla yüklendi.")
-    return embed_model
+    try:
+        # Sentence Transformers modelini manuel olarak yükle
+        from sentence_transformers import SentenceTransformer
+        
+        # Model yükleme seçenekleri
+        model_kwargs = {
+            "device": "cuda" if torch.cuda.is_available() else "cpu"
+        }
+        
+        # Modeli yükle
+        logger.info(f"Embedding modeli yükleniyor: {model_name}")
+        
+        # Modeli önce manuel olarak yükle
+        model = SentenceTransformer(model_name, cache_folder=cache_dir, **model_kwargs)
+        
+        # HuggingFaceEmbedding'e modeli doğrudan geç
+        embed_model = HuggingFaceEmbedding(
+            model_name=model_name,
+            model=model
+        )
+        
+        logger.info("Embedding modeli başarıyla yüklendi.")
+        return embed_model
+        
+    except Exception as e:
+        logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
+        logger.info("Varsayılan embedding modeli kullanılıyor...")
+        
+        # Hata durumunda basit bir yapılandırma kullan
+        embed_model = HuggingFaceEmbedding(
+            model_name=model_name
+        )
+        
+        return embed_model
 
 # JSON veri yükleme
 def load_json_data(file_path: str) -> Dict[str, Any]:
