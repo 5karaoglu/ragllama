@@ -79,40 +79,89 @@ def setup_llm():
             
             # RTX 4090'lar güçlü olduğu için quantization'a gerek yok
             use_quantization = False
-            
-            # Eğer birden fazla GPU varsa, paralel işleme kullan
-            if gpu_count > 1:
-                logger.info(f"{gpu_count} GPU paralel kullanılacak")
-                device_map = "auto"
-            else:
-                device_map = device
                 
         except Exception as e:
             logger.warning(f"GPU yapılandırması yapılamadı: {str(e)}")
             use_quantization = True
-            device_map = "auto"
     else:
         use_quantization = False
-        device_map = device
     
-    # Model yapılandırması
-    llm = HuggingFaceLLM(
-        model_name=model_name,
-        tokenizer_name=model_name,
-        context_window=4096,
-        max_new_tokens=512,
-        generate_kwargs={"temperature": 0.7, "do_sample": True},
-        model_kwargs={
-            "torch_dtype": torch.float16 if device == "cuda" else torch.float32,  # float16 daha az bellek kullanır
-            "cache_dir": cache_dir,
-            "load_in_8bit": use_quantization,  # RTX 4090'lar için quantization'a gerek yok
+    # Önce model ve tokenizer'ı manuel olarak yükleyelim
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    
+    try:
+        logger.info(f"Model yükleniyor: {model_name}")
+        
+        # Tokenizer'ı yükle
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            cache_dir=cache_dir
+        )
+        
+        # Model'i yükle
+        model_kwargs = {
+            "torch_dtype": torch.float16 if device == "cuda" else torch.float32,
             "low_cpu_mem_usage": True,
-            "device_map": device_map  # Otomatik cihaz haritalaması
+            "cache_dir": cache_dir
         }
-    )
-    
-    logger.info("Model başarıyla yüklendi.")
-    return llm
+        
+        # 8-bit quantization kullan
+        if use_quantization and device == "cuda":
+            logger.info("8-bit quantization kullanılıyor")
+            model_kwargs["load_in_8bit"] = True
+        
+        # device_map'i sadece burada kullan
+        if device == "cuda":
+            model_kwargs["device_map"] = "auto"
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            **model_kwargs
+        )
+        
+        logger.info("Model başarıyla yüklendi")
+        
+        # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
+        llm = HuggingFaceLLM(
+            model=model,
+            tokenizer=tokenizer,
+            context_window=4096,
+            max_new_tokens=512,
+            generate_kwargs={"temperature": 0.7, "do_sample": True}
+        )
+        
+        return llm
+        
+    except Exception as e:
+        logger.error(f"Model yüklenirken hata oluştu: {str(e)}")
+        logger.error("Daha küçük bir model kullanmaya çalışılıyor...")
+        
+        # Daha küçük bir model dene
+        fallback_model = "google/flan-t5-base"
+        logger.info(f"Yedek model yükleniyor: {fallback_model}")
+        
+        tokenizer = AutoTokenizer.from_pretrained(
+            fallback_model,
+            cache_dir=cache_dir
+        )
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            fallback_model,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            low_cpu_mem_usage=True,
+            cache_dir=cache_dir,
+            device_map="auto" if device == "cuda" else None
+        )
+        
+        llm = HuggingFaceLLM(
+            model=model,
+            tokenizer=tokenizer,
+            context_window=2048,
+            max_new_tokens=256,
+            generate_kwargs={"temperature": 0.7, "do_sample": True}
+        )
+        
+        return llm
 
 def setup_embedding_model():
     logger.info("Embedding modeli yapılandırılıyor...")
