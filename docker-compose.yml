@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  rag-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Veri dosyasını bağla
+      - ./Book1.json:/app/Book1.json
+      # Model ve indeks önbelleklerini kalıcı hale getir
+      - model_cache:/app/model_cache
+      - embedding_cache:/app/embedding_cache
+      - storage:/app/storage
+    stdin_open: true  # docker run -i
+    tty: true         # docker run -t
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 8G  # Bellek sınırı
+
+volumes:
+  model_cache:
+  embedding_cache:
+  storage: 

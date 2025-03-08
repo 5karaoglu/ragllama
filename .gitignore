@@ -1,0 +1,5 @@
+model_cache/
+embedding_cache/
+storage/
+__pycache__/
+*.pyc
