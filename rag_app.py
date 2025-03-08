@@ -102,7 +102,6 @@ def setup_llm():
         context_window=4096,
         max_new_tokens=512,
         generate_kwargs={"temperature": 0.7, "do_sample": True},
-        device_map=device_map,
         model_kwargs={
             "torch_dtype": torch.float16 if device == "cuda" else torch.float32,  # float16 daha az bellek kullanır
             "cache_dir": cache_dir,
