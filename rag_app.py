@@ -23,7 +23,7 @@ from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.embeddings import BaseEmbedding
 
-# Özel SentenceTransformer Embedding sınıfı
+# Özel SentenceTransformer Embedding sınıfı - Pydantic uyumlu
 class CustomSentenceTransformerEmbedding(BaseEmbedding):
     """SentenceTransformer modelini kullanan özel embedding sınıfı."""
     
@@ -40,7 +40,9 @@ class CustomSentenceTransformerEmbedding(BaseEmbedding):
             cache_folder: Model önbellek dizini
             embed_batch_size: Batch boyutu
         """
+        # Önce BaseEmbedding'i başlat
         super().__init__(model_name=model_name)
+        
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError:
@@ -54,21 +56,22 @@ class CustomSentenceTransformerEmbedding(BaseEmbedding):
             "device": "cuda" if torch.cuda.is_available() else "cpu"
         }
         
+        # Modeli yükle
         if cache_folder is not None:
             os.makedirs(cache_folder, exist_ok=True)
-            self._model = SentenceTransformer(model_name, cache_folder=cache_folder, **model_kwargs)
+            self.model = SentenceTransformer(model_name, cache_folder=cache_folder, **model_kwargs)
         else:
-            self._model = SentenceTransformer(model_name, **model_kwargs)
+            self.model = SentenceTransformer(model_name, **model_kwargs)
             
-        self._embed_batch_size = embed_batch_size
+        self.embed_batch_size = embed_batch_size
         
         # Model boyutunu al
-        self._embed_dim = self._model.get_sentence_embedding_dimension()
+        self.embedding_dimension = self.model.get_sentence_embedding_dimension()
         
     @property
     def embed_dim(self) -> int:
         """Embedding boyutunu döndür."""
-        return self._embed_dim
+        return self.embedding_dimension
         
     def _get_text_embedding(self, text: str) -> List[float]:
         """Tek bir metni embed et.
@@ -80,9 +83,9 @@ class CustomSentenceTransformerEmbedding(BaseEmbedding):
             Embedding vektörü
         """
         if not text.strip():
-            return [0.0] * self._embed_dim
+            return [0.0] * self.embedding_dimension
             
-        embedding = self._model.encode(
+        embedding = self.model.encode(
             text,
             convert_to_numpy=True,
             show_progress_bar=False
@@ -147,13 +150,13 @@ class CustomSentenceTransformerEmbedding(BaseEmbedding):
                 
         if not non_empty_texts:
             # Tüm metinler boşsa, sıfır vektörleri döndür
-            return [[0.0] * self._embed_dim for _ in range(len(texts))]
+            return [[0.0] * self.embedding_dimension for _ in range(len(texts))]
             
         # Batch'ler halinde embed et
         embeddings = []
-        for i in range(0, len(non_empty_texts), self._embed_batch_size):
-            batch_texts = non_empty_texts[i:i + self._embed_batch_size]
-            batch_embeddings = self._model.encode(
+        for i in range(0, len(non_empty_texts), self.embed_batch_size):
+            batch_texts = non_empty_texts[i:i + self.embed_batch_size]
+            batch_embeddings = self.model.encode(
                 batch_texts,
                 convert_to_numpy=True,
                 show_progress_bar=False
@@ -161,7 +164,7 @@ class CustomSentenceTransformerEmbedding(BaseEmbedding):
             embeddings.extend(batch_embeddings)
             
         # Sonuçları orijinal sıraya göre düzenle
-        result = [[0.0] * self._embed_dim for _ in range(len(texts))]
+        result = [[0.0] * self.embedding_dimension for _ in range(len(texts))]
         for i, idx in enumerate(non_empty_indices):
             result[idx] = embeddings[i].tolist()
             
@@ -361,21 +364,23 @@ def setup_embedding_model():
             logger.error("Çok basit bir embedding modeli kullanılıyor...")
             
             # En basit çözüm - rastgele embeddings
-            class DummyEmbedding(BaseEmbedding):
+            class SimpleDummyEmbedding(BaseEmbedding):
                 """Acil durum için çok basit bir embedding sınıfı."""
                 
-                def __init__(self, embed_dim: int = 384):
-                    super().__init__()
-                    self._embed_dim = embed_dim
-                    logger.warning("DummyEmbedding kullanılıyor - SADECE TEST İÇİN!")
+                def __init__(self):
+                    # Önce BaseEmbedding'i başlat
+                    super().__init__(model_name="dummy-model")
+                    # Sonra kendi alanlarımızı tanımla
+                    self.embedding_dimension = 384
+                    logger.warning("SimpleDummyEmbedding kullanılıyor - SADECE TEST İÇİN!")
                 
                 @property
                 def embed_dim(self) -> int:
-                    return self._embed_dim
+                    return self.embedding_dimension
                 
                 def _get_text_embedding(self, text: str) -> List[float]:
                     # Sabit bir embedding döndür
-                    return [0.1] * self._embed_dim
+                    return [0.1] * self.embedding_dimension
                 
                 async def _aget_text_embedding(self, text: str) -> List[float]:
                     return self._get_text_embedding(text)
@@ -387,12 +392,12 @@ def setup_embedding_model():
                     return self._get_query_embedding(query)
                 
                 def _embed(self, texts: List[str]) -> List[List[float]]:
-                    return [[0.1] * self._embed_dim for _ in texts]
+                    return [[0.1] * self.embedding_dimension for _ in texts]
                 
                 async def _aembed(self, texts: List[str]) -> List[List[float]]:
                     return self._embed(texts)
             
-            return DummyEmbedding()
+            return SimpleDummyEmbedding()
 
 # JSON veri yükleme
 def load_json_data(file_path: str) -> Dict[str, Any]:
