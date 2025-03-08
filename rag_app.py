@@ -7,7 +7,7 @@ import logging
 import colorlog
 import torch
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 
 from llama_index.core import (
@@ -24,7 +24,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.embeddings import BaseEmbedding
 
 # Özel SentenceTransformer Embedding sınıfı
-class SentenceTransformerEmbedding(BaseEmbedding):
+class CustomSentenceTransformerEmbedding(BaseEmbedding):
     """SentenceTransformer modelini kullanan özel embedding sınıfı."""
     
     def __init__(
@@ -33,7 +33,7 @@ class SentenceTransformerEmbedding(BaseEmbedding):
         cache_folder: Optional[str] = None,
         embed_batch_size: int = 32,
     ):
-        """SentenceTransformerEmbedding sınıfını başlat.
+        """CustomSentenceTransformerEmbedding sınıfını başlat.
         
         Args:
             model_name: SentenceTransformer model adı
@@ -69,6 +69,60 @@ class SentenceTransformerEmbedding(BaseEmbedding):
     def embed_dim(self) -> int:
         """Embedding boyutunu döndür."""
         return self._embed_dim
+        
+    def _get_text_embedding(self, text: str) -> List[float]:
+        """Tek bir metni embed et.
+        
+        Args:
+            text: Embed edilecek metin
+            
+        Returns:
+            Embedding vektörü
+        """
+        if not text.strip():
+            return [0.0] * self._embed_dim
+            
+        embedding = self._model.encode(
+            text,
+            convert_to_numpy=True,
+            show_progress_bar=False
+        )
+        return embedding.tolist()
+        
+    async def _aget_text_embedding(self, text: str) -> List[float]:
+        """Asenkron olarak tek bir metni embed et.
+        
+        Args:
+            text: Embed edilecek metin
+            
+        Returns:
+            Embedding vektörü
+        """
+        # Asenkron versiyonu şimdilik senkron olarak uyguluyoruz
+        return self._get_text_embedding(text)
+        
+    def _get_query_embedding(self, query: str) -> List[float]:
+        """Sorgu metnini embed et.
+        
+        Args:
+            query: Sorgu metni
+            
+        Returns:
+            Sorgu embedding vektörü
+        """
+        return self._get_text_embedding(query)
+        
+    async def _aget_query_embedding(self, query: str) -> List[float]:
+        """Asenkron olarak sorgu metnini embed et.
+        
+        Args:
+            query: Sorgu metni
+            
+        Returns:
+            Sorgu embedding vektörü
+        """
+        # Asenkron versiyonu şimdilik senkron olarak uyguluyoruz
+        return self._get_query_embedding(query)
         
     def _embed(self, texts: List[str]) -> List[List[float]]:
         """Metinleri embed et.
@@ -113,24 +167,17 @@ class SentenceTransformerEmbedding(BaseEmbedding):
             
         return result
         
-    def _get_query_embedding(self, query: str) -> List[float]:
-        """Sorgu metnini embed et.
+    async def _aembed(self, texts: List[str]) -> List[List[float]]:
+        """Asenkron olarak metinleri embed et.
         
         Args:
-            query: Sorgu metni
+            texts: Embed edilecek metinler listesi
             
         Returns:
-            Sorgu embedding vektörü
+            Embedding vektörleri listesi
         """
-        if not query.strip():
-            return [0.0] * self._embed_dim
-            
-        embedding = self._model.encode(
-            query,
-            convert_to_numpy=True,
-            show_progress_bar=False
-        )
-        return embedding.tolist()
+        # Asenkron versiyonu şimdilik senkron olarak uyguluyoruz
+        return self._embed(texts)
 
 # Loglama yapılandırması
 def setup_logging():
@@ -284,10 +331,10 @@ def setup_embedding_model():
     os.makedirs(cache_dir, exist_ok=True)
     
     try:
-        # Özel SentenceTransformerEmbedding sınıfını kullan
+        # Özel CustomSentenceTransformerEmbedding sınıfını kullan
         logger.info(f"Embedding modeli yükleniyor: {model_name}")
         
-        embed_model = SentenceTransformerEmbedding(
+        embed_model = CustomSentenceTransformerEmbedding(
             model_name=model_name,
             cache_folder=cache_dir,
             embed_batch_size=32
@@ -298,15 +345,54 @@ def setup_embedding_model():
         
     except Exception as e:
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
-        logger.error("Daha basit bir embedding modeli kullanılıyor...")
+        logger.error("Varsayılan HuggingFaceEmbedding kullanılıyor...")
         
-        # Çok basit bir fallback çözümü - sadece acil durumlar için
-        from llama_index.core.embeddings import SimpleEmbedding
-        
-        embed_model = SimpleEmbedding()
-        logger.warning("Basit embedding modeli kullanılıyor - performans düşük olabilir!")
-        
-        return embed_model
+        # Daha güvenilir bir fallback çözümü
+        try:
+            # HuggingFaceEmbedding'i basit parametrelerle kullan
+            embed_model = HuggingFaceEmbedding(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                max_length=512
+            )
+            logger.info("HuggingFaceEmbedding başarıyla yüklendi.")
+            return embed_model
+        except Exception as e2:
+            logger.error(f"HuggingFaceEmbedding yüklenirken hata oluştu: {str(e2)}")
+            logger.error("Çok basit bir embedding modeli kullanılıyor...")
+            
+            # En basit çözüm - rastgele embeddings
+            class DummyEmbedding(BaseEmbedding):
+                """Acil durum için çok basit bir embedding sınıfı."""
+                
+                def __init__(self, embed_dim: int = 384):
+                    super().__init__()
+                    self._embed_dim = embed_dim
+                    logger.warning("DummyEmbedding kullanılıyor - SADECE TEST İÇİN!")
+                
+                @property
+                def embed_dim(self) -> int:
+                    return self._embed_dim
+                
+                def _get_text_embedding(self, text: str) -> List[float]:
+                    # Sabit bir embedding döndür
+                    return [0.1] * self._embed_dim
+                
+                async def _aget_text_embedding(self, text: str) -> List[float]:
+                    return self._get_text_embedding(text)
+                
+                def _get_query_embedding(self, query: str) -> List[float]:
+                    return self._get_text_embedding(query)
+                
+                async def _aget_query_embedding(self, query: str) -> List[float]:
+                    return self._get_query_embedding(query)
+                
+                def _embed(self, texts: List[str]) -> List[List[float]]:
+                    return [[0.1] * self._embed_dim for _ in texts]
+                
+                async def _aembed(self, texts: List[str]) -> List[List[float]]:
+                    return self._embed(texts)
+            
+            return DummyEmbedding()
 
 # JSON veri yükleme
 def load_json_data(file_path: str) -> Dict[str, Any]:
