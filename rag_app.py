@@ -6,7 +6,8 @@ import json
 import logging
 import colorlog
 import torch
-from typing import List, Dict, Any
+import numpy as np
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from llama_index.core import (
@@ -20,6 +21,116 @@ from llama_index.core.query_engine import JSONalyzeQueryEngine
 from llama_index.core.tools.query_engine import QueryEngineTool
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.core.embeddings import BaseEmbedding
+
+# Özel SentenceTransformer Embedding sınıfı
+class SentenceTransformerEmbedding(BaseEmbedding):
+    """SentenceTransformer modelini kullanan özel embedding sınıfı."""
+    
+    def __init__(
+        self,
+        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        cache_folder: Optional[str] = None,
+        embed_batch_size: int = 32,
+    ):
+        """SentenceTransformerEmbedding sınıfını başlat.
+        
+        Args:
+            model_name: SentenceTransformer model adı
+            cache_folder: Model önbellek dizini
+            embed_batch_size: Batch boyutu
+        """
+        super().__init__(model_name=model_name)
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            raise ImportError(
+                "SentenceTransformer kütüphanesi bulunamadı. "
+                "Lütfen şu komutu çalıştırın: pip install sentence-transformers"
+            )
+        
+        # Model parametreleri
+        model_kwargs = {
+            "device": "cuda" if torch.cuda.is_available() else "cpu"
+        }
+        
+        if cache_folder is not None:
+            os.makedirs(cache_folder, exist_ok=True)
+            self._model = SentenceTransformer(model_name, cache_folder=cache_folder, **model_kwargs)
+        else:
+            self._model = SentenceTransformer(model_name, **model_kwargs)
+            
+        self._embed_batch_size = embed_batch_size
+        
+        # Model boyutunu al
+        self._embed_dim = self._model.get_sentence_embedding_dimension()
+        
+    @property
+    def embed_dim(self) -> int:
+        """Embedding boyutunu döndür."""
+        return self._embed_dim
+        
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        """Metinleri embed et.
+        
+        Args:
+            texts: Embed edilecek metinler listesi
+            
+        Returns:
+            Embedding vektörleri listesi
+        """
+        # Boş metinleri kontrol et
+        if not texts:
+            return []
+            
+        # Boş metinleri filtrele ve indekslerini kaydet
+        non_empty_texts = []
+        non_empty_indices = []
+        for i, text in enumerate(texts):
+            if text.strip():
+                non_empty_texts.append(text)
+                non_empty_indices.append(i)
+                
+        if not non_empty_texts:
+            # Tüm metinler boşsa, sıfır vektörleri döndür
+            return [[0.0] * self._embed_dim for _ in range(len(texts))]
+            
+        # Batch'ler halinde embed et
+        embeddings = []
+        for i in range(0, len(non_empty_texts), self._embed_batch_size):
+            batch_texts = non_empty_texts[i:i + self._embed_batch_size]
+            batch_embeddings = self._model.encode(
+                batch_texts,
+                convert_to_numpy=True,
+                show_progress_bar=False
+            )
+            embeddings.extend(batch_embeddings)
+            
+        # Sonuçları orijinal sıraya göre düzenle
+        result = [[0.0] * self._embed_dim for _ in range(len(texts))]
+        for i, idx in enumerate(non_empty_indices):
+            result[idx] = embeddings[i].tolist()
+            
+        return result
+        
+    def _get_query_embedding(self, query: str) -> List[float]:
+        """Sorgu metnini embed et.
+        
+        Args:
+            query: Sorgu metni
+            
+        Returns:
+            Sorgu embedding vektörü
+        """
+        if not query.strip():
+            return [0.0] * self._embed_dim
+            
+        embedding = self._model.encode(
+            query,
+            convert_to_numpy=True,
+            show_progress_bar=False
+        )
+        return embedding.tolist()
 
 # Loglama yapılandırması
 def setup_logging():
@@ -173,24 +284,13 @@ def setup_embedding_model():
     os.makedirs(cache_dir, exist_ok=True)
     
     try:
-        # Sentence Transformers modelini manuel olarak yükle
-        from sentence_transformers import SentenceTransformer
-        
-        # Model yükleme seçenekleri
-        model_kwargs = {
-            "device": "cuda" if torch.cuda.is_available() else "cpu"
-        }
-        
-        # Modeli yükle
+        # Özel SentenceTransformerEmbedding sınıfını kullan
         logger.info(f"Embedding modeli yükleniyor: {model_name}")
         
-        # Modeli önce manuel olarak yükle
-        model = SentenceTransformer(model_name, cache_folder=cache_dir, **model_kwargs)
-        
-        # HuggingFaceEmbedding'e modeli doğrudan geç
-        embed_model = HuggingFaceEmbedding(
+        embed_model = SentenceTransformerEmbedding(
             model_name=model_name,
-            model=model
+            cache_folder=cache_dir,
+            embed_batch_size=32
         )
         
         logger.info("Embedding modeli başarıyla yüklendi.")
@@ -198,12 +298,13 @@ def setup_embedding_model():
         
     except Exception as e:
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
-        logger.info("Varsayılan embedding modeli kullanılıyor...")
+        logger.error("Daha basit bir embedding modeli kullanılıyor...")
         
-        # Hata durumunda basit bir yapılandırma kullan
-        embed_model = HuggingFaceEmbedding(
-            model_name=model_name
-        )
+        # Çok basit bir fallback çözümü - sadece acil durumlar için
+        from llama_index.core.embeddings import SimpleEmbedding
+        
+        embed_model = SimpleEmbedding()
+        logger.warning("Basit embedding modeli kullanılıyor - performans düşük olabilir!")
         
         return embed_model
 
