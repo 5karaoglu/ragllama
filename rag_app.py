@@ -156,8 +156,20 @@ def setup_embedding_model():
     
     # Basit bir HuggingFaceEmbedding kullan
     try:
+        # safe_serialization parametresini kaldırarak HuggingFaceEmbedding'i yapılandır
+        from transformers import AutoModel
+        
+        model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        
+        # Modeli manuel olarak yükle, safe_serialization parametresi olmadan
+        model = AutoModel.from_pretrained(
+            model_name,
+            trust_remote_code=True
+        )
+        
         embed_model = HuggingFaceEmbedding(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_name=model_name,
+            model=model,
             max_length=512
         )
         logger.info("Embedding modeli başarıyla yüklendi.")
@@ -185,42 +197,51 @@ def load_json_data(file_path: str) -> Dict[str, Any]:
 # JSON indeksi oluşturma veya yükleme
 def create_or_load_json_index(json_data: Dict[str, Any], persist_dir: str = "./storage"):
     # Dizin varsa yükle, yoksa oluştur
-    if os.path.exists(persist_dir) and len(os.listdir(persist_dir)) > 0:
+    if os.path.exists(persist_dir) and os.path.exists(os.path.join(persist_dir, "docstore.json")):
         logger.info(f"Mevcut indeks '{persist_dir}' konumundan yükleniyor...")
-        storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
-        index = load_index_from_storage(storage_context)
-        logger.info("İndeks başarıyla yüklendi.")
-        return index
+        try:
+            storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+            index = load_index_from_storage(storage_context)
+            logger.info("İndeks başarıyla yüklendi.")
+            return index
+        except Exception as e:
+            logger.error(f"İndeks yüklenirken hata oluştu: {str(e)}")
+            logger.info("Yeni indeks oluşturuluyor...")
+            # Hata durumunda yeni indeks oluştur
+            return create_new_json_index(json_data, persist_dir)
     else:
         logger.info("Yeni JSON indeksi oluşturuluyor...")
+        return create_new_json_index(json_data, persist_dir)
+
+# Yeni JSON indeksi oluşturma
+def create_new_json_index(json_data: Dict[str, Any], persist_dir: str):
+    # JSON verilerini düzleştir - tüm satırları tek bir listede topla
+    json_rows = []
+    
+    for sheet_name, rows in json_data.items():
+        logger.info(f"'{sheet_name}' sayfası işleniyor, {len(rows)} satır bulundu.")
         
-        # JSON verilerini düzleştir - tüm satırları tek bir listede topla
-        json_rows = []
-        
-        for sheet_name, rows in json_data.items():
-            logger.info(f"'{sheet_name}' sayfası işleniyor, {len(rows)} satır bulundu.")
-            
-            for i, row in enumerate(rows):
-                # Her satıra sayfa bilgisini ekle
-                row_with_metadata = row.copy()
-                row_with_metadata["_sheet"] = sheet_name
-                row_with_metadata["_row_index"] = i
-                row_with_metadata["_row_id"] = f"{sheet_name}_{i}"
-                json_rows.append(row_with_metadata)
-        
-        logger.info(f"Toplam {len(json_rows)} satır işlendi.")
-        
-        # JSON indeksini oluştur ve kaydet
-        os.makedirs(persist_dir, exist_ok=True)
-        
-        # JSON satırlarını dosyaya kaydet
-        json_file_path = os.path.join(persist_dir, "json_rows.json")
-        with open(json_file_path, "w", encoding="utf-8") as f:
-            json.dump(json_rows, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"JSON satırları '{json_file_path}' konumuna kaydedildi.")
-        
-        return json_rows
+        for i, row in enumerate(rows):
+            # Her satıra sayfa bilgisini ekle
+            row_with_metadata = row.copy()
+            row_with_metadata["_sheet"] = sheet_name
+            row_with_metadata["_row_index"] = i
+            row_with_metadata["_row_id"] = f"{sheet_name}_{i}"
+            json_rows.append(row_with_metadata)
+    
+    logger.info(f"Toplam {len(json_rows)} satır işlendi.")
+    
+    # JSON indeksini oluştur ve kaydet
+    os.makedirs(persist_dir, exist_ok=True)
+    
+    # JSON satırlarını dosyaya kaydet
+    json_file_path = os.path.join(persist_dir, "json_rows.json")
+    with open(json_file_path, "w", encoding="utf-8") as f:
+        json.dump(json_rows, f, ensure_ascii=False, indent=2)
+    
+    logger.info(f"JSON satırları '{json_file_path}' konumuna kaydedildi.")
+    
+    return json_rows
 
 # Ana uygulama
 def main():
@@ -238,6 +259,17 @@ def main():
     # JSON verisini yükle
     json_file = "Book1.json"
     json_data = load_json_data(json_file)
+    
+    # Önce storage dizinini temizle (isteğe bağlı)
+    storage_dir = "./storage"
+    if os.path.exists(storage_dir):
+        import shutil
+        try:
+            logger.info(f"Eski storage dizini temizleniyor: {storage_dir}")
+            shutil.rmtree(storage_dir)
+            logger.info("Storage dizini temizlendi.")
+        except Exception as e:
+            logger.warning(f"Storage dizini temizlenirken hata oluştu: {str(e)}")
     
     # JSON verilerini düzleştirilmiş liste olarak al
     json_rows = create_or_load_json_index(json_data)
