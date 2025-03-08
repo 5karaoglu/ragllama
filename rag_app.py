@@ -15,7 +15,8 @@ from llama_index.core import (
     load_index_from_storage
 )
 from llama_index.core.indices.loading import load_index_from_storage
-from llama_index.core.indices.struct_store.json_store import JSONStructStoreIndex
+# JSONStructStoreIndex artık kullanılmıyor
+# from llama_index.core.indices.struct_store.json_store import JSONStructStoreIndex
 from llama_index.core.objects import ObjectIndex, SimpleJsonObject
 from llama_index.core.query_engine import JSONalyzeQueryEngine
 from llama_index.core.tools.query_engine import QueryEngineTool
