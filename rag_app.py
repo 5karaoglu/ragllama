@@ -54,7 +54,8 @@ logger = setup_logging()
 def setup_llm():
     logger.info("DeepSeek modeli yapılandırılıyor...")
     
-    model_name = "deepseek-ai/deepseek-llm-7b-chat"  # Daha küçük model kullanıyoruz, 14B çok büyük olabilir
+    # DeepSeek modelini kullanmaya devam ediyoruz
+    model_name = "deepseek-ai/deepseek-llm-7b-chat"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -64,6 +65,36 @@ def setup_llm():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Cihaz: {device}")
     
+    # RTX 4090 GPU'lar için bellek optimizasyonu
+    if device == "cuda":
+        try:
+            # CUDA önbelleğini temizle
+            torch.cuda.empty_cache()
+            import gc
+            gc.collect()
+            
+            # GPU sayısını kontrol et
+            gpu_count = torch.cuda.device_count()
+            logger.info(f"Kullanılabilir GPU sayısı: {gpu_count}")
+            
+            # RTX 4090'lar güçlü olduğu için quantization'a gerek yok
+            use_quantization = False
+            
+            # Eğer birden fazla GPU varsa, paralel işleme kullan
+            if gpu_count > 1:
+                logger.info(f"{gpu_count} GPU paralel kullanılacak")
+                device_map = "auto"
+            else:
+                device_map = device
+                
+        except Exception as e:
+            logger.warning(f"GPU yapılandırması yapılamadı: {str(e)}")
+            use_quantization = True
+            device_map = "auto"
+    else:
+        use_quantization = False
+        device_map = device
+    
     # Model yapılandırması
     llm = HuggingFaceLLM(
         model_name=model_name,
@@ -71,10 +102,13 @@ def setup_llm():
         context_window=4096,
         max_new_tokens=512,
         generate_kwargs={"temperature": 0.7, "do_sample": True},
-        device_map=device,
+        device_map=device_map,
         model_kwargs={
-            "torch_dtype": torch.bfloat16 if device == "cuda" else torch.float32,
-            "cache_dir": cache_dir
+            "torch_dtype": torch.float16 if device == "cuda" else torch.float32,  # float16 daha az bellek kullanır
+            "cache_dir": cache_dir,
+            "load_in_8bit": use_quantization,  # RTX 4090'lar için quantization'a gerek yok
+            "low_cpu_mem_usage": True,
+            "device_map": device_map  # Otomatik cihaz haritalaması
         }
     )
     

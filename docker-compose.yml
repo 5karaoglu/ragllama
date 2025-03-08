@@ -17,15 +17,16 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all  # Tüm GPU'ları görünür yap
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256  # CUDA bellek ayarları
     # GPU desteği ve kaynak sınırlamaları
     deploy:
       resources:
         limits:
-          memory: 8G  # Bellek sınırı
+          memory: 32G  # Bellek sınırını artır
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: 2  # İki GPU kullan
               capabilities: [gpu]
 
 volumes:
