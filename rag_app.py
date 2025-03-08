@@ -72,8 +72,10 @@ def setup_llm():
         max_new_tokens=512,
         generate_kwargs={"temperature": 0.7, "do_sample": True},
         device_map=device,
-        cache_dir=cache_dir,
-        model_kwargs={"torch_dtype": torch.bfloat16 if device == "cuda" else torch.float32}
+        model_kwargs={
+            "torch_dtype": torch.bfloat16 if device == "cuda" else torch.float32,
+            "cache_dir": cache_dir
+        }
     )
     
     logger.info("Model başarıyla yüklendi.")
