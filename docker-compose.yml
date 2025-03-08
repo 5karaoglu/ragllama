@@ -17,12 +17,16 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all  # Tüm GPU'ları görünür yap
+    # GPU desteği ve kaynak sınırlamaları
     deploy:
       resources:
         limits:
           memory: 8G  # Bellek sınırı
-    # NVIDIA GPU desteği için
-    runtime: nvidia
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   model_cache:
