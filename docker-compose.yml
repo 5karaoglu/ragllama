@@ -11,6 +11,7 @@ services:
     volumes:
       - ./pdf_docs:/app/pdf_docs
       - ./storage:/app/storage
+      - ./Book1.json:/app/Book1.json
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
