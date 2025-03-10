@@ -14,7 +14,19 @@ services:
       - ./Book1.json:/app/Book1.json
     environment:
       - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=256
+      - CUDA_VISIBLE_DEVICES=0,1  # Kullanılabilir GPU'ları belirtin
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 24G  # Bellek sınırı
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
       interval: 30s
