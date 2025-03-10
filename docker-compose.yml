@@ -12,16 +12,21 @@ services:
       - ./pdf_docs:/app/pdf_docs
       - ./storage:/app/storage
       - ./Book1.json:/app/Book1.json
+      - model_cache:/app/model_cache
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=256
       - CUDA_VISIBLE_DEVICES=0,1  # Kullanılabilir GPU'ları belirtin
+      - TRANSFORMERS_CACHE=/app/model_cache
+      - HF_HOME=/app/model_cache
+      - TORCH_HOME=/app/model_cache
     restart: unless-stopped
+    shm_size: 8gb  # Paylaşılan bellek boyutunu artır
     deploy:
       resources:
         limits:
-          memory: 24G  # Bellek sınırı
+          memory: 32G  # Bellek sınırını artır
         reservations:
           devices:
             - driver: nvidia
@@ -32,5 +37,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 120s  # Başlangıç süresini artır
+
+volumes:
+  model_cache:  # Model önbelleği için kalıcı volume
 
