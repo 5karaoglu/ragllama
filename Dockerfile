@@ -1,24 +1,25 @@
-FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# Sistem bağımlılıklarını yükle
-RUN apt-get update && apt-get install -y \
+# Gerekli paketleri yükle
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# CUDA bellek yönetimi için çevre değişkenleri
-ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
-# İki GPU'yu da kullan
-ENV CUDA_VISIBLE_DEVICES=0,1
-
-# Python bağımlılıklarını kopyala ve yükle
+# Uygulama dosyalarını kopyala
 COPY requirements.txt .
+COPY main.py .
+COPY modules/ ./modules/
+
+# PDF dizinini oluştur
+RUN mkdir -p pdf_docs storage/json storage/pdf
+
+# Gerekli Python paketlerini yükle
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Uygulama dosyalarını kopyala
-COPY . .
+# Uygulama portunu aç
+EXPOSE 5000
 
-# Çalışma komutu
-CMD ["python", "rag_app.py"] 
+# Uygulamayı başlat
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "main:app"] 
