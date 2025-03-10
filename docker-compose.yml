@@ -16,7 +16,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=256
       - CUDA_VISIBLE_DEVICES=0,1  # Kullanılabilir GPU'ları belirtin
       - TRANSFORMERS_CACHE=/app/model_cache
       - HF_HOME=/app/model_cache
