@@ -6,12 +6,10 @@ import json
 import logging
 import colorlog
 import torch
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from pathlib import Path
 from flask import Flask, request, jsonify
 import PyPDF2
-import faiss
-import numpy as np
 
 from llama_index.core import (
     Settings,
