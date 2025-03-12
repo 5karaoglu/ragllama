@@ -50,26 +50,30 @@ Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle 
 """
 
 # PDF modülü için özel prompt şablonu
-PDF_QA_PROMPT_TEMPLATE = PromptTemplate(
-    """{system_prompt}
+PDF_QA_TEMPLATE = """
+{system_prompt}
 
 Aşağıdaki belgeler verilmiştir:
 {context}
 
 Soru: {query}
-Yanıt: """
-)
+Yanıt: 
+"""
+
+PDF_QA_PROMPT_TEMPLATE = PromptTemplate(PDF_QA_TEMPLATE)
 
 # DB modülü için özel prompt şablonu
-DB_QA_PROMPT_TEMPLATE = PromptTemplate(
-    """{system_prompt}
+DB_QA_TEMPLATE = """
+{system_prompt}
 
 Aşağıdaki veritabanı kayıtları verilmiştir:
 {context}
 
 Soru: {query}
-Yanıt: """
-)
+Yanıt: 
+"""
+
+DB_QA_PROMPT_TEMPLATE = PromptTemplate(DB_QA_TEMPLATE)
 
 # Loglama yapılandırması
 def setup_logging():
@@ -266,7 +270,7 @@ def create_or_load_json_index(json_data: Dict[str, Any], persist_dir: str = "./s
 
 # Yeni JSON indeksi oluşturma
 def create_new_json_index(json_data: Dict[str, Any], persist_dir: str):
-    # JSON verilerini düzleştir - tüm satırları tek bir listede topla
+    # JSON verilerini düzleştirilmiş liste olarak al
     json_rows = []
     
     for sheet_name, rows in json_data.items():
@@ -453,13 +457,17 @@ def initialize_app():
         # JSON verilerini düzleştirilmiş liste olarak al
         json_rows = create_or_load_json_index(json_data)
         
+        # Prompt şablonunu hazırla
+        db_qa_template = DB_QA_PROMPT_TEMPLATE.partial_format(
+            system_prompt=SYSTEM_PROMPT
+        )
+        
         # JSONalyzeQueryEngine oluştur
         db_query_engine = JSONalyzeQueryEngine(
             list_of_dict=json_rows,
             llm=llm,
             verbose=True,
-            prompt_template=DB_QA_PROMPT_TEMPLATE,
-            system_prompt=SYSTEM_PROMPT
+            prompt_template=db_qa_template
         )
         
         logger.info("DB modülü başarıyla yüklendi.")
@@ -482,11 +490,15 @@ def initialize_app():
                 similarity_top_k=3
             )
             
+            # Prompt şablonunu hazırla
+            text_qa_template = PDF_QA_PROMPT_TEMPLATE.partial_format(
+                system_prompt=SYSTEM_PROMPT
+            )
+            
             pdf_query_engine = RetrieverQueryEngine.from_args(
                 retriever=retriever,
                 llm=llm,
-                text_qa_template=PDF_QA_PROMPT_TEMPLATE,
-                system_prompt=SYSTEM_PROMPT
+                text_qa_template=text_qa_template
             )
             
             logger.info("PDF modülü başarıyla yüklendi.")
