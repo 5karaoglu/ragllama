@@ -18,7 +18,7 @@ services:
       - pdf_storage:/app/pdf_storage
     environment:
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all  # Tüm GPU'ları görünür yap
+      - NVIDIA_VISIBLE_DEVICES=0,1  # İki GPU'yu da görünür yap
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512  # CUDA bellek ayarlarını artır
       - TRANSFORMERS_CACHE=/app/model_cache  # Transformers önbelleğini ayarla
       - HF_HOME=/app/model_cache  # HuggingFace önbelleğini ayarla
@@ -34,7 +34,8 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all  # Tüm GPU'ları kullan
+              count: 2  # İki GPU kullan
+              device_ids: ['0', '1']  # İlk iki GPU'yu kullan (indeks 0 ve 1)
               capabilities: [gpu, utility, compute]  # Tüm GPU yeteneklerini etkinleştir
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]

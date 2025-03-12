@@ -13,8 +13,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 # CUDA bellek yönetimi için çevre değişkenleri
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
-# Tüm GPU'ları kullan
-ENV CUDA_VISIBLE_DEVICES=all
+# İki GPU'yu da kullan
+ENV CUDA_VISIBLE_DEVICES=0,1
 # CUDA ortam değişkenleri
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
