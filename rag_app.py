@@ -210,7 +210,6 @@ def setup_embedding_model():
         # Modeli yükle
         embed_model = HuggingFaceEmbedding(
             model_name=model_name,
-            cache_dir=cache_dir,
             max_length=512,
             # BGE modelleri için query prefix ekleme
             query_instruction="Represent this sentence for searching relevant passages:"
@@ -227,7 +226,6 @@ def setup_embedding_model():
             fallback_model = "BAAI/bge-small-en-v1.5"
             embed_model = HuggingFaceEmbedding(
                 model_name=fallback_model,
-                cache_dir="./embedding_cache",
                 max_length=512,
                 query_instruction="Represent this sentence for searching relevant passages:"
             )
@@ -366,8 +364,11 @@ def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
     
     logger.info(f"PDF'den {len(documents)} belge oluşturuldu.")
     
-    # Vektör indeksi oluştur
-    index = VectorStoreIndex.from_documents(documents)
+    # Vektör indeksi oluştur - embed_model parametresini açıkça belirt
+    index = VectorStoreIndex.from_documents(
+        documents,
+        embed_model=Settings.embed_model  # Global embed_model'i kullan
+    )
     
     # İndeksi kaydet
     os.makedirs(persist_dir, exist_ok=True)
@@ -468,6 +469,13 @@ def initialize_app():
     Settings.llm = llm
     if embed_model:
         Settings.embed_model = embed_model
+        logger.info("Embedding modeli global ayarlara atandı.")
+    else:
+        logger.warning("Embedding modeli bulunamadı, varsayılan model kullanılacak.")
+        # Varsayılan olarak local embedding modeli kullan
+        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+        Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        logger.info("Varsayılan embedding modeli (all-MiniLM-L6-v2) global ayarlara atandı.")
     
     # JSON verisini yükle ve işle
     try:
