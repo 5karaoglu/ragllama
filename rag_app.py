@@ -43,11 +43,13 @@ Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kur
 3. Eğer yanıt verilen belgelerde bulunmuyorsa, "Bu konuda belgelerde yeterli bilgi bulamadım" deyin.
 4. Kişisel görüş veya yorum eklemeyin.
 5. Verilen konunun dışına çıkmayın.
-6. Yanıtlarınızı kısa, öz ve anlaşılır tutun.
+6. Yanıtlarınızı kapsamlı, detaylı ve anlaşılır tutun.
 7. Emin olmadığınız bilgileri paylaşmayın.
 8. Belgelerdeki bilgileri çarpıtmadan, doğru şekilde aktarın.
+9. Yanıtlarınızı yapılandırırken, önemli bilgileri vurgulayın ve gerektiğinde maddeler halinde sunun.
+10. Teknik terimleri açıklayın ve gerektiğinde örnekler verin.
 
-Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle yanıtlamaktır.
+Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
 """
 
 # Loglama yapılandırması
@@ -93,10 +95,10 @@ def setup_debug_handler():
 
 # Model yapılandırması
 def setup_llm():
-    logger.info("DeepSeek modeli yapılandırılıyor...")
+    logger.info("DeepSeek 14B modeli yapılandırılıyor...")
     
-    # DeepSeek modelini kullanmaya devam ediyoruz
-    model_name = "deepseek-ai/deepseek-llm-7b-chat"
+    # DeepSeek 14B modelini kullanacağız
+    model_name = "deepseek-ai/deepseek-llm-14b-chat"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -155,9 +157,9 @@ def setup_llm():
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
-            context_window=4096,
-            max_new_tokens=512,
-            generate_kwargs={"temperature": 0.7, "do_sample": True}
+            context_window=8192,  # Daha uzun bağlam penceresi
+            max_new_tokens=1024,  # Daha uzun yanıtlar için
+            generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
         )
         
         return llm
@@ -167,7 +169,7 @@ def setup_llm():
         logger.error("Daha küçük bir model kullanmaya çalışılıyor...")
         
         # Daha küçük bir model dene
-        fallback_model = "google/flan-t5-base"
+        fallback_model = "deepseek-ai/deepseek-llm-7b-chat"
         logger.info(f"Yedek model yükleniyor: {fallback_model}")
         
         tokenizer = AutoTokenizer.from_pretrained(
@@ -186,9 +188,9 @@ def setup_llm():
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
-            context_window=2048,
-            max_new_tokens=256,
-            generate_kwargs={"temperature": 0.7, "do_sample": True}
+            context_window=4096,
+            max_new_tokens=512,
+            generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
         )
         
         return llm
@@ -196,30 +198,45 @@ def setup_llm():
 def setup_embedding_model():
     logger.info("Embedding modeli yapılandırılıyor...")
     
-    # Basit bir HuggingFaceEmbedding kullan
+    # BGE-large-en-v1.5 embedding modelini kullan
     try:
-        # safe_serialization parametresini kaldırarak HuggingFaceEmbedding'i yapılandır
-        from transformers import AutoModel
+        # BGE-large-en-v1.5 modelini yapılandır
+        model_name = "BAAI/bge-large-en-v1.5"
+        cache_dir = "./embedding_cache"
         
-        model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        # Cache dizinini oluştur
+        os.makedirs(cache_dir, exist_ok=True)
         
-        # Modeli manuel olarak yükle, safe_serialization parametresi olmadan
-        model = AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=True
-        )
-        
+        # Modeli yükle
         embed_model = HuggingFaceEmbedding(
             model_name=model_name,
-            model=model,
-            max_length=512
+            cache_dir=cache_dir,
+            max_length=512,
+            # BGE modelleri için query prefix ekleme
+            query_instruction="Represent this sentence for searching relevant passages:"
         )
-        logger.info("Embedding modeli başarıyla yüklendi.")
+        
+        logger.info("BGE-large-en-v1.5 embedding modeli başarıyla yüklendi.")
         return embed_model
     except Exception as e:
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
-        logger.warning("Varsayılan embedding modeli kullanılacak.")
-        return None
+        logger.warning("Daha küçük bir embedding modeli kullanmaya çalışılıyor...")
+        
+        try:
+            # Daha küçük bir BGE modeli dene
+            fallback_model = "BAAI/bge-small-en-v1.5"
+            embed_model = HuggingFaceEmbedding(
+                model_name=fallback_model,
+                cache_dir="./embedding_cache",
+                max_length=512,
+                query_instruction="Represent this sentence for searching relevant passages:"
+            )
+            logger.info(f"Yedek embedding modeli {fallback_model} başarıyla yüklendi.")
+            return embed_model
+        except Exception as e:
+            logger.error(f"Yedek embedding modeli yüklenirken hata oluştu: {str(e)}")
+            logger.warning("Varsayılan embedding modeli kullanılacak.")
+            return None
 
 # JSON veri yükleme
 def load_json_data(file_path: str) -> Dict[str, Any]:
@@ -496,7 +513,7 @@ def initialize_app():
             # PDF sorgu motorunu oluştur
             retriever = VectorIndexRetriever(
                 index=pdf_index,
-                similarity_top_k=3
+                similarity_top_k=5  # Daha fazla ilgili belge getir
             )
             
             # RetrieverQueryEngine oluştur

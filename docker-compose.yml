@@ -15,29 +15,35 @@ services:
       - model_cache:/app/model_cache
       - embedding_cache:/app/embedding_cache
       - storage:/app/storage
+      - pdf_storage:/app/pdf_storage
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all  # Tüm GPU'ları görünür yap
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256  # CUDA bellek ayarları
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512  # CUDA bellek ayarlarını artır
+      - TRANSFORMERS_CACHE=/app/model_cache  # Transformers önbelleğini ayarla
+      - HF_HOME=/app/model_cache  # HuggingFace önbelleğini ayarla
+      - OMP_NUM_THREADS=8  # CPU iş parçacığı sayısını sınırla
+      - TOKENIZERS_PARALLELISM=true  # Tokenizer paralelliğini etkinleştir
     restart: unless-stopped
     # GPU desteği ve kaynak sınırlamaları
     deploy:
       resources:
         limits:
-          memory: 32G  # Bellek sınırını artır
+          memory: 48G  # Bellek sınırını artır (14B model için)
         reservations:
           devices:
             - driver: nvidia
-              count: 2  # İki GPU kullan
+              count: all  # Tüm GPU'ları kullan
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s  # Kontrol aralığını artır
+      timeout: 20s  # Zaman aşımını artır
       retries: 3
-      start_period: 120s  # Başlangıç süresini artır
+      start_period: 300s  # Başlangıç süresini artır (büyük model yükleme süresi için)
 
 volumes:
   model_cache:
   embedding_cache:
-  storage: 
+  storage:
+  pdf_storage: 
