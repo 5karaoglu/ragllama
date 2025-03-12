@@ -25,6 +25,7 @@ from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.prompts import PromptTemplate
+from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler, CBEventType
 
 # Flask uygulaması
 app = Flask(__name__)
@@ -32,6 +33,7 @@ app = Flask(__name__)
 # Global değişkenler
 db_query_engine = None
 pdf_query_engine = None
+llama_debug_handler = None
 
 # Sistem promptları
 SYSTEM_PROMPT = """
@@ -93,7 +95,7 @@ def setup_logging():
     )
     
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)  # DEBUG seviyesine değiştirdik
     logger.addHandler(handler)
     
     # Diğer kütüphanelerin loglarını azalt
@@ -103,6 +105,15 @@ def setup_logging():
     return logger
 
 logger = setup_logging()
+
+# LlamaDebugHandler kurulumu
+def setup_debug_handler():
+    global llama_debug_handler
+    llama_debug_handler = LlamaDebugHandler(print_trace_on_end=True)
+    callback_manager = CallbackManager([llama_debug_handler])
+    Settings.callback_manager = callback_manager
+    logger.info("LlamaDebugHandler başarıyla kuruldu.")
+    return llama_debug_handler
 
 # Model yapılandırması
 def setup_llm():
@@ -385,7 +396,7 @@ def status():
 @app.route('/api/query', methods=['POST'])
 def query():
     """Kullanıcı sorgusunu işler ve yanıt döndürür."""
-    global db_query_engine, pdf_query_engine
+    global db_query_engine, pdf_query_engine, llama_debug_handler
     
     try:
         data = request.json
@@ -395,21 +406,48 @@ def query():
         if not user_query:
             return jsonify({"error": "Sorgu parametresi gerekli"}), 400
         
+        # Sorgu öncesi debug handler'ı temizle
+        if llama_debug_handler:
+            llama_debug_handler.reset()
+        
         # Modüle göre sorguyu işle
         if module == 'db':
             if db_query_engine is None:
                 return jsonify({"error": "DB query engine henüz hazır değil"}), 503
                 
             logger.info(f"DB modülü ile soru işleniyor: {user_query}")
+            
+            # Prompt şablonunu logla
+            db_qa_template = DB_QA_PROMPT_TEMPLATE.partial_format(system_prompt=SYSTEM_PROMPT)
+            logger.info(f"DB Prompt Şablonu: {db_qa_template.template}")
+            
             response = db_query_engine.query(user_query)
         elif module == 'pdf':
             if pdf_query_engine is None:
                 return jsonify({"error": "PDF query engine henüz hazır değil"}), 503
                 
             logger.info(f"PDF modülü ile soru işleniyor: {user_query}")
+            
+            # Prompt şablonunu logla
+            text_qa_template = PDF_QA_PROMPT_TEMPLATE.partial_format(system_prompt=SYSTEM_PROMPT)
+            logger.info(f"PDF Prompt Şablonu: {text_qa_template.template}")
+            
             response = pdf_query_engine.query(user_query)
         else:
             return jsonify({"error": "Geçersiz modül parametresi"}), 400
+        
+        # LLM giriş/çıkışlarını logla
+        if llama_debug_handler:
+            event_pairs = llama_debug_handler.get_llm_inputs_outputs()
+            if event_pairs:
+                for i, (start_event, end_event) in enumerate(event_pairs):
+                    logger.info(f"LLM Çağrısı #{i+1}:")
+                    if 'messages' in start_event.payload:
+                        logger.info(f"Giriş mesajları: {start_event.payload['messages']}")
+                    if 'prompt' in start_event.payload:
+                        logger.info(f"Giriş promptu: {start_event.payload['prompt']}")
+                    if 'response' in end_event.payload:
+                        logger.info(f"Çıkış yanıtı: {end_event.payload['response']}")
         
         return jsonify({
             "query": user_query,
@@ -428,6 +466,9 @@ def initialize_app():
     global db_query_engine, pdf_query_engine
     
     logger.info("RAG uygulaması başlatılıyor...")
+    
+    # Debug handler'ı kur
+    setup_debug_handler()
     
     # Modelleri yapılandır
     llm = setup_llm()
