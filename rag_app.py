@@ -95,10 +95,10 @@ def setup_debug_handler():
 
 # Model yapılandırması
 def setup_llm():
-    logger.info("DeepSeek 14B modeli yapılandırılıyor...")
+    logger.info("DeepSeek-R1-Distill-Qwen-14B modeli yapılandırılıyor...")
     
-    # DeepSeek 14B modelini kullanacağız
-    model_name = "deepseek-ai/deepseek-llm-14b-chat"
+    # DeepSeek-R1-Distill-Qwen-14B modelini kullanacağız
+    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -198,7 +198,6 @@ def setup_llm():
 def setup_embedding_model():
     logger.info("Embedding modeli yapılandırılıyor...")
     
-    # BGE-large-en-v1.5 embedding modelini kullan
     try:
         # BGE-large-en-v1.5 modelini yapılandır
         model_name = "BAAI/bge-large-en-v1.5"
@@ -207,7 +206,13 @@ def setup_embedding_model():
         # Cache dizinini oluştur
         os.makedirs(cache_dir, exist_ok=True)
         
-        # Modeli yükle
+        # Sentence-transformers kullanarak modeli yükle
+        from sentence_transformers import SentenceTransformer
+        
+        # Önce SentenceTransformer ile modeli yükle
+        st_model = SentenceTransformer(model_name, cache_folder=cache_dir)
+        
+        # Sonra HuggingFaceEmbedding ile sarmala
         embed_model = HuggingFaceEmbedding(
             model_name=model_name,
             max_length=512,
@@ -219,15 +224,14 @@ def setup_embedding_model():
         return embed_model
     except Exception as e:
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
-        logger.warning("Daha küçük bir embedding modeli kullanmaya çalışılıyor...")
+        logger.warning("Daha basit bir embedding modeli kullanmaya çalışılıyor...")
         
         try:
-            # Daha küçük bir BGE modeli dene
-            fallback_model = "BAAI/bge-small-en-v1.5"
+            # Daha basit bir model dene
+            fallback_model = "sentence-transformers/all-MiniLM-L6-v2"
             embed_model = HuggingFaceEmbedding(
                 model_name=fallback_model,
-                max_length=512,
-                query_instruction="Represent this sentence for searching relevant passages:"
+                max_length=512
             )
             logger.info(f"Yedek embedding modeli {fallback_model} başarıyla yüklendi.")
             return embed_model
