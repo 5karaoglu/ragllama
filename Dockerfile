@@ -10,9 +10,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # CUDA bellek yönetimi için çevre değişkenleri
-ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
-# İki GPU'yu da kullan
-ENV CUDA_VISIBLE_DEVICES=0,1
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
+# Tüm GPU'ları kullan
+ENV CUDA_VISIBLE_DEVICES=all
+# CUDA ortam değişkenleri
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
 # Python bağımlılıklarını kopyala ve yükle
 COPY requirements.txt .
@@ -24,7 +28,7 @@ COPY Book1.json .
 COPY document.pdf .
 
 # Model ve storage dizinlerini oluştur
-RUN mkdir -p model_cache embedding_cache storage
+RUN mkdir -p model_cache embedding_cache storage pdf_storage
 
 # Uygulama portunu aç
 EXPOSE 5000

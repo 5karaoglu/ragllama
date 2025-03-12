@@ -20,6 +20,8 @@ einops==0.7.0
 optimum==1.16.1
 protobuf==4.24.4
 peft==0.6.2
-xformers==0.0.22.post7
-triton==2.1.0
-flash-attn==2.4.2 
+# Aşağıdaki paketler GPU hızlandırma için opsiyonel
+# Kurulum hatası alınırsa yorum satırına alınabilir
+# xformers==0.0.22.post7
+# triton==2.1.0
+# flash-attn==2.4.2 
