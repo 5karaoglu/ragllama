@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 WORKDIR /app
 
 # Sistem bağımlılıklarını yükle
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
     git \
     curl \
