@@ -8,6 +8,7 @@ import colorlog
 import torch
 from typing import List, Dict, Any
 from pathlib import Path
+from flask import Flask, request, jsonify
 
 from llama_index.core import (
     Settings,
@@ -19,6 +20,12 @@ from llama_index.core.query_engine import JSONalyzeQueryEngine
 from llama_index.core.tools.query_engine import QueryEngineTool
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+# Flask uygulaması
+app = Flask(__name__)
+
+# Global değişkenler
+query_engine = None
 
 # Loglama yapılandırması
 def setup_logging():
@@ -243,8 +250,49 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str):
     
     return json_rows
 
-# Ana uygulama
-def main():
+# API endpoint'leri
+@app.route('/api/status', methods=['GET'])
+def status():
+    """API durumunu kontrol eder."""
+    return jsonify({
+        "status": "online",
+        "query_engine_ready": query_engine is not None
+    })
+
+@app.route('/api/query', methods=['POST'])
+def query():
+    """Kullanıcı sorgusunu işler ve yanıt döndürür."""
+    global query_engine
+    
+    try:
+        data = request.json
+        user_query = data.get('query')
+        
+        if not user_query:
+            return jsonify({"error": "Sorgu parametresi gerekli"}), 400
+        
+        if query_engine is None:
+            return jsonify({"error": "Query engine henüz hazır değil"}), 503
+        
+        # Sorguyu işle
+        logger.info(f"Soru işleniyor: {user_query}")
+        response = query_engine.query(user_query)
+        
+        return jsonify({
+            "query": user_query,
+            "response": str(response)
+        })
+    
+    except Exception as e:
+        logger.error(f"Sorgu işlenirken hata oluştu: {str(e)}")
+        logger.exception("Hata detayları:")
+        return jsonify({"error": str(e)}), 500
+
+# Uygulama başlatma
+def initialize_app():
+    """Uygulamayı başlatır ve gerekli bileşenleri yükler."""
+    global query_engine
+    
     logger.info("RAG uygulaması başlatılıyor...")
     
     # Modelleri yapılandır
@@ -281,32 +329,16 @@ def main():
         verbose=True
     )
     
-    logger.info("RAG uygulaması hazır. Sorularınızı sorun (çıkmak için 'q' veya 'exit' yazın):")
-    
-    # Komut satırı arayüzü
-    while True:
-        try:
-            user_input = input("\nSoru: ")
-            
-            if user_input.lower() in ['q', 'exit', 'quit', 'çıkış']:
-                logger.info("Uygulama kapatılıyor...")
-                break
-            
-            if not user_input.strip():
-                continue
-            
-            logger.info(f"Soru işleniyor: {user_input}")
-            response = query_engine.query(user_input)
-            
-            print("\nCevap:")
-            print(response)
-        
-        except KeyboardInterrupt:
-            logger.info("Kullanıcı tarafından sonlandırıldı.")
-            break
-        except Exception as e:
-            logger.error(f"Hata oluştu: {str(e)}")
-            logger.exception("Hata detayları:")
+    logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
+    return True
 
 if __name__ == "__main__":
-    main() 
+    # Uygulamayı başlat
+    success = initialize_app()
+    
+    if success:
+        # Flask uygulamasını başlat
+        logger.info("API sunucusu başlatılıyor...")
+        app.run(host='0.0.0.0', port=5000)
+    else:
+        logger.error("Uygulama başlatılamadı") 

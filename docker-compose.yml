@@ -1,10 +1,12 @@
 version: '3.8'
 
 services:
-  rag-app:
+  rag-api:
     build:
       context: .
       dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
     volumes:
       # Veri dosyasını bağla
       - ./Book1.json:/app/Book1.json
@@ -12,12 +14,11 @@ services:
       - model_cache:/app/model_cache
       - embedding_cache:/app/embedding_cache
       - storage:/app/storage
-    stdin_open: true  # docker run -i
-    tty: true         # docker run -t
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all  # Tüm GPU'ları görünür yap
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256  # CUDA bellek ayarları
+    restart: unless-stopped
     # GPU desteği ve kaynak sınırlamaları
     deploy:
       resources:
@@ -28,6 +29,12 @@ services:
             - driver: nvidia
               count: 2  # İki GPU kullan
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Başlangıç süresini artır
 
 volumes:
   model_cache:

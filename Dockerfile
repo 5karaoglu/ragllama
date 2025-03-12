@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # CUDA bellek yönetimi için çevre değişkenleri
@@ -18,7 +19,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Uygulama dosyalarını kopyala
-COPY . .
+COPY rag_app.py .
+COPY Book1.json .
+
+# Model ve storage dizinlerini oluştur
+RUN mkdir -p model_cache embedding_cache storage
+
+# Uygulama portunu aç
+EXPOSE 5000
 
 # Çalışma komutu
 CMD ["python", "rag_app.py"] 
