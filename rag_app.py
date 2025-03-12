@@ -105,23 +105,33 @@ def setup_llm():
     os.makedirs(cache_dir, exist_ok=True)
     
     # GPU kullanılabilirliğini kontrol et
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Cihaz: {device}")
-    
-    # RTX 4090 GPU'lar için bellek optimizasyonu
-    if device == "cuda":
-        try:
+    device = "cpu"
+    try:
+        if torch.cuda.is_available():
+            device = "cuda"
+            # CUDA bilgilerini logla
+            logger.info(f"CUDA kullanılabilir: {torch.cuda.is_available()}")
+            logger.info(f"CUDA sürümü: {torch.version.cuda}")
+            logger.info(f"CUDA cihaz sayısı: {torch.cuda.device_count()}")
+            for i in range(torch.cuda.device_count()):
+                logger.info(f"CUDA cihaz {i}: {torch.cuda.get_device_name(i)}")
+            
             # CUDA önbelleğini temizle
             torch.cuda.empty_cache()
             import gc
             gc.collect()
             
-            # GPU sayısını kontrol et
-            gpu_count = torch.cuda.device_count()
-            logger.info(f"Kullanılabilir GPU sayısı: {gpu_count}")
-            
-        except Exception as e:
-            logger.warning(f"GPU yapılandırması yapılamadı: {str(e)}")
+            # CUDA ortam değişkenlerini kontrol et
+            logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Ayarlanmamış')}")
+            logger.info(f"CUDA_HOME: {os.environ.get('CUDA_HOME', 'Ayarlanmamış')}")
+        else:
+            logger.warning("CUDA kullanılamıyor! CPU kullanılacak.")
+            logger.warning("NVIDIA sürücülerini ve CUDA kurulumunu kontrol edin.")
+    except Exception as e:
+        logger.error(f"GPU kontrolü sırasında hata oluştu: {str(e)}")
+        logger.warning("CPU kullanılacak.")
+    
+    logger.info(f"Cihaz: {device}")
     
     # Önce model ve tokenizer'ı manuel olarak yükleyelim
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -145,6 +155,9 @@ def setup_llm():
         # device_map'i sadece burada kullan
         if device == "cuda":
             model_kwargs["device_map"] = "auto"
+            logger.info("GPU kullanılacak: device_map=auto")
+        else:
+            logger.warning("GPU kullanılamıyor, CPU kullanılacak!")
         
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -152,6 +165,7 @@ def setup_llm():
         )
         
         logger.info("Model başarıyla yüklendi")
+        logger.info(f"Model cihazı: {next(model.parameters()).device}")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
         llm = HuggingFaceLLM(

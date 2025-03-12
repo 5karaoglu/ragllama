@@ -25,6 +25,7 @@ services:
       - OMP_NUM_THREADS=8  # CPU iş parçacığı sayısını sınırla
       - TOKENIZERS_PARALLELISM=true  # Tokenizer paralelliğini etkinleştir
     restart: unless-stopped
+    runtime: nvidia  # NVIDIA runtime'ı açıkça belirt
     # GPU desteği ve kaynak sınırlamaları
     deploy:
       resources:
@@ -34,7 +35,7 @@ services:
           devices:
             - driver: nvidia
               count: all  # Tüm GPU'ları kullan
-              capabilities: [gpu]
+              capabilities: [gpu, utility, compute]  # Tüm GPU yeteneklerini etkinleştir
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
       interval: 60s  # Kontrol aralığını artır
