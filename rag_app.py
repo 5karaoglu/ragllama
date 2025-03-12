@@ -24,7 +24,6 @@ from llama_index.core.tools.query_engine import QueryEngineTool
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.prompts import PromptTemplate
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler, CBEventType
 
 # Flask uygulaması
@@ -50,32 +49,6 @@ Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kur
 
 Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle yanıtlamaktır.
 """
-
-# PDF modülü için özel prompt şablonu
-PDF_QA_TEMPLATE = """
-{system_prompt}
-
-Aşağıdaki belgeler verilmiştir:
-{context_str}
-
-Soru: {query_str}
-Yanıt: 
-"""
-
-PDF_QA_PROMPT_TEMPLATE = PromptTemplate(PDF_QA_TEMPLATE)
-
-# DB modülü için özel prompt şablonu
-DB_QA_TEMPLATE = """
-{system_prompt}
-
-Aşağıdaki veritabanı kayıtları verilmiştir:
-{context_str}
-
-Soru: {query_str}
-Yanıt: 
-"""
-
-DB_QA_PROMPT_TEMPLATE = PromptTemplate(DB_QA_TEMPLATE)
 
 # Loglama yapılandırması
 def setup_logging():
@@ -109,8 +82,11 @@ logger = setup_logging()
 # LlamaDebugHandler kurulumu
 def setup_debug_handler():
     global llama_debug_handler
-    llama_debug_handler = LlamaDebugHandler(print_trace_on_end=True)
+    # Yeni bir LlamaDebugHandler oluştur
+    llama_debug_handler = LlamaDebugHandler(print_trace_on_end=False)
+    # CallbackManager ile entegre et
     callback_manager = CallbackManager([llama_debug_handler])
+    # Global Settings'e ata
     Settings.callback_manager = callback_manager
     logger.info("LlamaDebugHandler başarıyla kuruldu.")
     return llama_debug_handler
@@ -406,9 +382,10 @@ def query():
         if not user_query:
             return jsonify({"error": "Sorgu parametresi gerekli"}), 400
         
-        # Sorgu öncesi debug handler'ı temizle
+        # Sorgu öncesi event loglarını temizle
         if llama_debug_handler:
-            llama_debug_handler.reset()
+            llama_debug_handler.flush_event_logs()
+            logger.info("Sorgu öncesi debug handler event logları temizlendi.")
         
         # Modüle göre sorguyu işle
         if module == 'db':
@@ -417,20 +394,12 @@ def query():
                 
             logger.info(f"DB modülü ile soru işleniyor: {user_query}")
             
-            # Prompt şablonunu logla
-            db_qa_template = DB_QA_PROMPT_TEMPLATE.partial_format(system_prompt=SYSTEM_PROMPT)
-            logger.info(f"DB Prompt Şablonu: {db_qa_template.template}")
-            
             response = db_query_engine.query(user_query)
         elif module == 'pdf':
             if pdf_query_engine is None:
                 return jsonify({"error": "PDF query engine henüz hazır değil"}), 503
                 
             logger.info(f"PDF modülü ile soru işleniyor: {user_query}")
-            
-            # Prompt şablonunu logla
-            text_qa_template = PDF_QA_PROMPT_TEMPLATE.partial_format(system_prompt=SYSTEM_PROMPT)
-            logger.info(f"PDF Prompt Şablonu: {text_qa_template.template}")
             
             response = pdf_query_engine.query(user_query)
         else:
@@ -448,6 +417,10 @@ def query():
                         logger.info(f"Giriş promptu: {start_event.payload['prompt']}")
                     if 'response' in end_event.payload:
                         logger.info(f"Çıkış yanıtı: {end_event.payload['response']}")
+            
+            # İşlem bittikten sonra event loglarını temizle
+            llama_debug_handler.flush_event_logs()
+            logger.info("Sorgu sonrası debug handler event logları temizlendi.")
         
         return jsonify({
             "query": user_query,
@@ -498,17 +471,12 @@ def initialize_app():
         # JSON verilerini düzleştirilmiş liste olarak al
         json_rows = create_or_load_json_index(json_data)
         
-        # Prompt şablonunu hazırla
-        db_qa_template = DB_QA_PROMPT_TEMPLATE.partial_format(
-            system_prompt=SYSTEM_PROMPT
-        )
-        
         # JSONalyzeQueryEngine oluştur
         db_query_engine = JSONalyzeQueryEngine(
             list_of_dict=json_rows,
             llm=llm,
             verbose=True,
-            prompt_template=db_qa_template
+            system_prompt=SYSTEM_PROMPT
         )
         
         logger.info("DB modülü başarıyla yüklendi.")
@@ -531,15 +499,11 @@ def initialize_app():
                 similarity_top_k=3
             )
             
-            # Prompt şablonunu hazırla
-            text_qa_template = PDF_QA_PROMPT_TEMPLATE.partial_format(
-                system_prompt=SYSTEM_PROMPT
-            )
-            
+            # RetrieverQueryEngine oluştur
             pdf_query_engine = RetrieverQueryEngine.from_args(
                 retriever=retriever,
                 llm=llm,
-                text_qa_template=text_qa_template
+                system_prompt=SYSTEM_PROMPT
             )
             
             logger.info("PDF modülü başarıyla yüklendi.")
