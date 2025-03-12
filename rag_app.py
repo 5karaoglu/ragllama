@@ -24,6 +24,7 @@ from llama_index.core.tools.query_engine import QueryEngineTool
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.prompts import PromptTemplate
 
 # Flask uygulaması
 app = Flask(__name__)
@@ -31,6 +32,44 @@ app = Flask(__name__)
 # Global değişkenler
 db_query_engine = None
 pdf_query_engine = None
+
+# Sistem promptları
+SYSTEM_PROMPT = """
+Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kurallara uygun yanıtlar verin:
+
+1. Her zaman Türkçe yanıt verin.
+2. Yalnızca verilen belgelerden elde edilen bilgilere dayanarak yanıt verin.
+3. Eğer yanıt verilen belgelerde bulunmuyorsa, "Bu konuda belgelerde yeterli bilgi bulamadım" deyin.
+4. Kişisel görüş veya yorum eklemeyin.
+5. Verilen konunun dışına çıkmayın.
+6. Yanıtlarınızı kısa, öz ve anlaşılır tutun.
+7. Emin olmadığınız bilgileri paylaşmayın.
+8. Belgelerdeki bilgileri çarpıtmadan, doğru şekilde aktarın.
+
+Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle yanıtlamaktır.
+"""
+
+# PDF modülü için özel prompt şablonu
+PDF_QA_PROMPT_TEMPLATE = PromptTemplate(
+    """{system_prompt}
+
+Aşağıdaki belgeler verilmiştir:
+{context}
+
+Soru: {query}
+Yanıt: """
+)
+
+# DB modülü için özel prompt şablonu
+DB_QA_PROMPT_TEMPLATE = PromptTemplate(
+    """{system_prompt}
+
+Aşağıdaki veritabanı kayıtları verilmiştir:
+{context}
+
+Soru: {query}
+Yanıt: """
+)
 
 # Loglama yapılandırması
 def setup_logging():
@@ -418,7 +457,9 @@ def initialize_app():
         db_query_engine = JSONalyzeQueryEngine(
             list_of_dict=json_rows,
             llm=llm,
-            verbose=True
+            verbose=True,
+            prompt_template=DB_QA_PROMPT_TEMPLATE,
+            system_prompt=SYSTEM_PROMPT
         )
         
         logger.info("DB modülü başarıyla yüklendi.")
@@ -443,7 +484,9 @@ def initialize_app():
             
             pdf_query_engine = RetrieverQueryEngine.from_args(
                 retriever=retriever,
-                llm=llm
+                llm=llm,
+                text_qa_template=PDF_QA_PROMPT_TEMPLATE,
+                system_prompt=SYSTEM_PROMPT
             )
             
             logger.info("PDF modülü başarıyla yüklendi.")
