@@ -6,26 +6,33 @@ import json
 import logging
 import colorlog
 import torch
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from pathlib import Path
 from flask import Flask, request, jsonify
+import PyPDF2
+import faiss
+import numpy as np
 
 from llama_index.core import (
     Settings,
     StorageContext,
-    load_index_from_storage
+    load_index_from_storage,
+    VectorStoreIndex,
+    Document
 )
 from llama_index.core.indices.loading import load_index_from_storage
-from llama_index.core.query_engine import JSONalyzeQueryEngine
+from llama_index.core.query_engine import JSONalyzeQueryEngine, RetrieverQueryEngine
 from llama_index.core.tools.query_engine import QueryEngineTool
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.core.retrievers import VectorIndexRetriever
 
 # Flask uygulaması
 app = Flask(__name__)
 
 # Global değişkenler
-query_engine = None
+db_query_engine = None
+pdf_query_engine = None
 
 # Loglama yapılandırması
 def setup_logging():
@@ -250,36 +257,122 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str):
     
     return json_rows
 
+# PDF işleme fonksiyonları
+def extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
+    """PDF dosyasından metin çıkartır."""
+    logger.info(f"'{file_path}' dosyasından metin çıkartılıyor...")
+    text_chunks = []
+    
+    try:
+        with open(file_path, 'rb') as file:
+            reader = PyPDF2.PdfReader(file)
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text.strip():  # Boş sayfaları atla
+                    # Sayfa numarasını metne ekle
+                    chunk = {
+                        "content": text,
+                        "metadata": {
+                            "page": i + 1,
+                            "source": file_path
+                        }
+                    }
+                    text_chunks.append(chunk)
+        
+        logger.info(f"PDF dosyasından {len(text_chunks)} sayfa metni çıkartıldı.")
+        return text_chunks
+    
+    except Exception as e:
+        logger.error(f"PDF metni çıkartılırken hata oluştu: {str(e)}")
+        raise
+
+def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") -> VectorStoreIndex:
+    """PDF verilerini işleyip indeks oluşturma veya yükleme işlemleri."""
+    # Dizin varsa yükle, yoksa oluştur
+    if os.path.exists(persist_dir) and os.path.exists(os.path.join(persist_dir, "docstore.json")):
+        logger.info(f"Mevcut PDF indeksi '{persist_dir}' konumundan yükleniyor...")
+        try:
+            storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+            index = load_index_from_storage(storage_context)
+            logger.info("PDF indeksi başarıyla yüklendi.")
+            return index
+        except Exception as e:
+            logger.error(f"PDF indeksi yüklenirken hata oluştu: {str(e)}")
+            logger.info("Yeni PDF indeksi oluşturuluyor...")
+            # Hata durumunda yeni indeks oluştur
+            return create_new_pdf_index(pdf_file, persist_dir)
+    else:
+        logger.info("Yeni PDF indeksi oluşturuluyor...")
+        return create_new_pdf_index(pdf_file, persist_dir)
+
+def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
+    """Yeni bir PDF indeksi oluşturur."""
+    # PDF dosyasından metin çıkart
+    text_chunks = extract_text_from_pdf(pdf_file)
+    
+    # Belgeleri oluştur
+    documents = []
+    for chunk in text_chunks:
+        doc = Document(
+            text=chunk["content"],
+            metadata=chunk["metadata"]
+        )
+        documents.append(doc)
+    
+    logger.info(f"PDF'den {len(documents)} belge oluşturuldu.")
+    
+    # Vektör indeksi oluştur
+    index = VectorStoreIndex.from_documents(documents)
+    
+    # İndeksi kaydet
+    os.makedirs(persist_dir, exist_ok=True)
+    index.storage_context.persist(persist_dir=persist_dir)
+    
+    logger.info(f"PDF indeksi '{persist_dir}' konumuna kaydedildi.")
+    return index
+
 # API endpoint'leri
 @app.route('/api/status', methods=['GET'])
 def status():
     """API durumunu kontrol eder."""
     return jsonify({
         "status": "online",
-        "query_engine_ready": query_engine is not None
+        "db_query_engine_ready": db_query_engine is not None,
+        "pdf_query_engine_ready": pdf_query_engine is not None
     })
 
 @app.route('/api/query', methods=['POST'])
 def query():
     """Kullanıcı sorgusunu işler ve yanıt döndürür."""
-    global query_engine
+    global db_query_engine, pdf_query_engine
     
     try:
         data = request.json
         user_query = data.get('query')
+        module = data.get('module', 'db')  # Varsayılan olarak 'db' kullan
         
         if not user_query:
             return jsonify({"error": "Sorgu parametresi gerekli"}), 400
         
-        if query_engine is None:
-            return jsonify({"error": "Query engine henüz hazır değil"}), 503
-        
-        # Sorguyu işle
-        logger.info(f"Soru işleniyor: {user_query}")
-        response = query_engine.query(user_query)
+        # Modüle göre sorguyu işle
+        if module == 'db':
+            if db_query_engine is None:
+                return jsonify({"error": "DB query engine henüz hazır değil"}), 503
+                
+            logger.info(f"DB modülü ile soru işleniyor: {user_query}")
+            response = db_query_engine.query(user_query)
+        elif module == 'pdf':
+            if pdf_query_engine is None:
+                return jsonify({"error": "PDF query engine henüz hazır değil"}), 503
+                
+            logger.info(f"PDF modülü ile soru işleniyor: {user_query}")
+            response = pdf_query_engine.query(user_query)
+        else:
+            return jsonify({"error": "Geçersiz modül parametresi"}), 400
         
         return jsonify({
             "query": user_query,
+            "module": module,
             "response": str(response)
         })
     
@@ -291,7 +384,7 @@ def query():
 # Uygulama başlatma
 def initialize_app():
     """Uygulamayı başlatır ve gerekli bileşenleri yükler."""
-    global query_engine
+    global db_query_engine, pdf_query_engine
     
     logger.info("RAG uygulaması başlatılıyor...")
     
@@ -304,30 +397,64 @@ def initialize_app():
     if embed_model:
         Settings.embed_model = embed_model
     
-    # JSON verisini yükle
-    json_file = "Book1.json"
-    json_data = load_json_data(json_file)
+    # JSON verisini yükle ve işle
+    try:
+        json_file = "Book1.json"
+        json_data = load_json_data(json_file)
+        
+        # Önce storage dizinini temizle (isteğe bağlı)
+        storage_dir = "./storage"
+        if os.path.exists(storage_dir):
+            import shutil
+            try:
+                logger.info(f"Eski storage dizini temizleniyor: {storage_dir}")
+                shutil.rmtree(storage_dir)
+                logger.info("Storage dizini temizlendi.")
+            except Exception as e:
+                logger.warning(f"Storage dizini temizlenirken hata oluştu: {str(e)}")
+        
+        # JSON verilerini düzleştirilmiş liste olarak al
+        json_rows = create_or_load_json_index(json_data)
+        
+        # JSONalyzeQueryEngine oluştur
+        db_query_engine = JSONalyzeQueryEngine(
+            list_of_dict=json_rows,
+            llm=llm,
+            verbose=True
+        )
+        
+        logger.info("DB modülü başarıyla yüklendi.")
+    except Exception as e:
+        logger.error(f"DB modülü yüklenirken hata oluştu: {str(e)}")
+        logger.warning("DB modülü atlanıyor.")
     
-    # Önce storage dizinini temizle (isteğe bağlı)
-    storage_dir = "./storage"
-    if os.path.exists(storage_dir):
-        import shutil
-        try:
-            logger.info(f"Eski storage dizini temizleniyor: {storage_dir}")
-            shutil.rmtree(storage_dir)
-            logger.info("Storage dizini temizlendi.")
-        except Exception as e:
-            logger.warning(f"Storage dizini temizlenirken hata oluştu: {str(e)}")
-    
-    # JSON verilerini düzleştirilmiş liste olarak al
-    json_rows = create_or_load_json_index(json_data)
-    
-    # JSONalyzeQueryEngine oluştur
-    query_engine = JSONalyzeQueryEngine(
-        list_of_dict=json_rows,
-        llm=llm,
-        verbose=True
-    )
+    # PDF verisini yükle ve işle
+    try:
+        pdf_file = "document.pdf"  # PDF dosyasının adını buraya yazın
+        
+        # PDF dosyasının varlığını kontrol et
+        if os.path.exists(pdf_file):
+            # PDF indeksini oluştur veya yükle
+            pdf_index = create_or_load_pdf_index(pdf_file)
+            
+            # PDF sorgu motorunu oluştur
+            retriever = VectorIndexRetriever(
+                index=pdf_index,
+                similarity_top_k=3
+            )
+            
+            pdf_query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever,
+                llm=llm
+            )
+            
+            logger.info("PDF modülü başarıyla yüklendi.")
+        else:
+            logger.warning(f"PDF dosyası bulunamadı: {pdf_file}")
+            logger.warning("PDF modülü atlanıyor.")
+    except Exception as e:
+        logger.error(f"PDF modülü yüklenirken hata oluştu: {str(e)}")
+        logger.warning("PDF modülü atlanıyor.")
     
     logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
     return True
