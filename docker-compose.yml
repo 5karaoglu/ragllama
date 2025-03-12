@@ -34,7 +34,6 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 2  # İki GPU kullan
               device_ids: ['0', '1']  # İlk iki GPU'yu kullan (indeks 0 ve 1)
               capabilities: [gpu, utility, compute]  # Tüm GPU yeteneklerini etkinleştir
     healthcheck:
