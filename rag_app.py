@@ -54,9 +54,9 @@ PDF_QA_TEMPLATE = """
 {system_prompt}
 
 Aşağıdaki belgeler verilmiştir:
-{context}
+{context_str}
 
-Soru: {query}
+Soru: {query_str}
 Yanıt: 
 """
 
@@ -67,9 +67,9 @@ DB_QA_TEMPLATE = """
 {system_prompt}
 
 Aşağıdaki veritabanı kayıtları verilmiştir:
-{context}
+{context_str}
 
-Soru: {query}
+Soru: {query_str}
 Yanıt: 
 """
 
