@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Uygulama dosyalarını kopyala
 COPY rag_app.py .
 COPY Book1.json .
+COPY document.pdf .
 
 # Model ve storage dizinlerini oluştur
 RUN mkdir -p model_cache embedding_cache storage

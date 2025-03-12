@@ -10,6 +10,7 @@ services:
     volumes:
       # Veri dosyasını bağla
       - ./Book1.json:/app/Book1.json
+      - ./document.pdf:/app/document.pdf
       # Model ve indeks önbelleklerini kalıcı hale getir
       - model_cache:/app/model_cache
       - embedding_cache:/app/embedding_cache
