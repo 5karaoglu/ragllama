@@ -49,6 +49,16 @@ Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kur
 9. Yanıtlarınızı yapılandırırken, önemli bilgileri vurgulayın ve gerektiğinde maddeler halinde sunun.
 10. Teknik terimleri açıklayın ve gerektiğinde örnekler verin.
 
+SQL sorguları oluştururken aşağıdaki kurallara uyun:
+- SQLite sözdizimini kullanın.
+- SQLite'da yorum satırları '#' işareti ile değil, '--' (iki tire) ile başlar. 
+- Örnek doğru yorum: SELECT * FROM users -- Bu bir yorumdur
+- Örnek yanlış yorum: SELECT * FROM users # Bu bir yorumdur (KULLANMAYIN!)
+- Sorgunun içinde yorum yazmaktan tamamen kaçınmaya çalışın.
+- Sorgunuzu basit ve tek bir SQL ifadesi olarak yazın.
+- Türkçe karakterleri içeren sütun adlarını doğru şekilde kullanın.
+- Sütun ve tablo adlarında boşluk veya özel karakter varsa ters tırnak (`) kullanın.
+
 Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
 """
 
@@ -541,17 +551,42 @@ def initialize_app():
         json_rows = create_or_load_json_index(json_data)
         
         # JSONalyzeQueryEngine oluştur
-        db_query_engine = JSONalyzeQueryEngine(
-            list_of_dict=json_rows,
-            llm=llm,
-            verbose=True,
-            system_prompt=SYSTEM_PROMPT
-        )
-        
-        logger.info("DB modülü başarıyla yüklendi.")
+        try:
+            db_query_engine = JSONalyzeQueryEngine(
+                list_of_dict=json_rows,
+                llm=llm,
+                verbose=True,
+                system_prompt=SYSTEM_PROMPT,
+                synthesize_response=True,  # SQL sorgusu çalıştırılsa bile yanıtı sentezle
+                sql_optimizer=True  # SQL sorgularını optimize et
+            )
+            
+            logger.info("DB modülü başarıyla yüklendi.")
+        except Exception as sql_error:
+            logger.error(f"JSONalyzeQueryEngine oluşturulurken SQL hatası: {str(sql_error)}")
+            logger.exception("SQL hata detayları:")
+            logger.warning("JSONalyzeQueryEngine oluşturulurken hata, varsayılan yapılandırma deneniyor...")
+            
+            # Hata durumunda daha basit yapılandırmayı dene
+            try:
+                db_query_engine = JSONalyzeQueryEngine(
+                    list_of_dict=json_rows,
+                    llm=llm,
+                    verbose=True,
+                    system_prompt=SYSTEM_PROMPT,
+                    infer_schema=False  # Şema çıkarımını devre dışı bırak
+                )
+                logger.info("DB modülü basit yapılandırma ile yüklendi.")
+            except Exception as fallback_error:
+                logger.error(f"Alternatif JSONalyzeQueryEngine yapılandırması da başarısız oldu: {str(fallback_error)}")
+                logger.exception("Fallback hata detayları:")
+                logger.warning("DB modülü atlanıyor.")
+                db_query_engine = None
     except Exception as e:
         logger.error(f"DB modülü yüklenirken hata oluştu: {str(e)}")
+        logger.exception("Hata detayları:")
         logger.warning("DB modülü atlanıyor.")
+        db_query_engine = None
     
     # PDF verisini yükle ve işle
     try:
@@ -562,26 +597,50 @@ def initialize_app():
             # PDF indeksini oluştur veya yükle
             pdf_index = create_or_load_pdf_index(pdf_file)
             
-            # PDF sorgu motorunu oluştur
-            retriever = VectorIndexRetriever(
-                index=pdf_index,
-                similarity_top_k=5  # Daha fazla ilgili belge getir
-            )
-            
-            # RetrieverQueryEngine oluştur
-            pdf_query_engine = RetrieverQueryEngine.from_args(
-                retriever=retriever,
-                llm=llm,
-                system_prompt=SYSTEM_PROMPT
-            )
-            
-            logger.info("PDF modülü başarıyla yüklendi.")
+            try:
+                # PDF sorgu motorunu oluştur
+                retriever = VectorIndexRetriever(
+                    index=pdf_index,
+                    similarity_top_k=5  # Daha fazla ilgili belge getir
+                )
+                
+                # RetrieverQueryEngine oluştur
+                pdf_query_engine = RetrieverQueryEngine.from_args(
+                    retriever=retriever,
+                    llm=llm,
+                    verbose=True,  # Ayrıntılı günlükleri etkinleştir
+                    system_prompt=SYSTEM_PROMPT,
+                    node_postprocessors=None  # Hata yapabilecek özel işleyicileri kaldır
+                )
+                
+                logger.info("PDF modülü başarıyla yüklendi.")
+            except Exception as retriever_error:
+                logger.error(f"PDF sorgu motoru oluşturulurken hata: {str(retriever_error)}")
+                logger.exception("Retriever hata detayları:")
+                logger.warning("PDF modülü için basit yapılandırma deneniyor...")
+                
+                # Daha basit yapılandırma dene
+                try:
+                    # Basit sorgu motoru
+                    pdf_query_engine = pdf_index.as_query_engine(
+                        llm=llm,
+                        system_prompt=SYSTEM_PROMPT
+                    )
+                    logger.info("PDF modülü basit yapılandırma ile yüklendi.")
+                except Exception as fallback_error:
+                    logger.error(f"Alternatif PDF sorgu motoru yapılandırması da başarısız oldu: {str(fallback_error)}")
+                    logger.exception("PDF fallback hata detayları:")
+                    logger.warning("PDF modülü atlanıyor.")
+                    pdf_query_engine = None
         else:
             logger.warning(f"PDF dosyası bulunamadı: {pdf_file}")
             logger.warning("PDF modülü atlanıyor.")
+            pdf_query_engine = None
     except Exception as e:
         logger.error(f"PDF modülü yüklenirken hata oluştu: {str(e)}")
+        logger.exception("Hata detayları:")
         logger.warning("PDF modülü atlanıyor.")
+        pdf_query_engine = None
     
     logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
     return True
