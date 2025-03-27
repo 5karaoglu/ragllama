@@ -60,12 +60,17 @@ Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kur
 6. SQL sorgularını mümkün olduğunca basit tutun.
 7. SQL sorgularını tek bir ifade olarak yazın.
 8. SQL sorgusunu doğrudan çalıştırılabilir formatta döndürün - açıklama olmadan.
-9. Sorgu sonucunu ayrı bir yanıt olarak verin, sorguyu yanıta dahil etmeyin.
-10. Eğer sorgu oluşturmakta zorlanırsanız, verilere doğrudan bakıp analiz yapın.
+9. SQL sorgusu gönderilirken ASLA açıklama yazmayın - sadece SQL kodunu gönderin.
+10. DİKKAT: 'selecting the specific column' gibi doğal dil ifadeleri değil, 'SELECT column_name FROM table' gibi SQL kodları yazın!
+11. SQL sorgusu oluşturma düşünce sürecinizi dökümanlara yansıtmayın, SADECE nihai SQL kodunu yazın.
+12. Düşünme sürecinizi tamamlayın ve SADECE çalıştırmaya hazır SQL kodunu döndürün.
+13. Eğer sorgu oluşturmakta zorlanırsanız, verilere doğrudan bakıp analiz yapın.
 
 ÖRNEKLER:
 DOĞRU: SELECT * FROM users WHERE name = 'Ali';
+YANLIŞ: selecting the specific column which is name = 'Ali'
 YANLIŞ: SELECT * FROM users WHERE name = 'Ali'; # Bu Ali'yi bulan sorgu
+YANLIŞ: İşte Ali'yi bulmak için bir sorgu yazıyorum: SELECT * FROM users WHERE name = 'Ali';
 
 Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
 """
@@ -622,9 +627,8 @@ def initialize_app():
         
         # JSONalyzeQueryEngine oluştur
         try:
-            # Özel SQL Parser oluştur
-            custom_sql_parser = CustomSQLParser()
-            logger.info("Özel SQL Parser oluşturuldu")
+            # SQL Parser'ı devre dışı bırak (None olarak ayarla)
+            logger.info("JSONalyzeQueryEngine SQL Parser devre dışı bırakılarak oluşturuluyor")
             
             # JSONalyzeQueryEngine oluştur
             db_query_engine = JSONalyzeQueryEngine(
@@ -634,10 +638,14 @@ def initialize_app():
                 system_prompt=SYSTEM_PROMPT,
                 synthesize_response=True,  # SQL sorgusu çalıştırılsa bile yanıtı sentezle
                 sql_optimizer=True,  # SQL sorgularını optimize et
-                sql_parser=custom_sql_parser  # Özel SQL parser kullan
+                sql_parser=None,  # SQL Parser'ı devre dışı bırak
+                infer_schema=True,  # Şema çıkarımını etkinleştir
+                enforce_sql_syntax=True,  # SQL sözdizimi kontrolünü zorla
+                output_direct_sql=True,  # LLM'in doğrudan SQL sorgusu döndürmesini sağla
+                allow_multiple_queries=False  # Birden fazla sorguya izin verme
             )
             
-            logger.info("DB modülü başarıyla yüklendi.")
+            logger.info("DB modülü başarıyla yüklendi. SQL Parser devre dışı.")
         except Exception as sql_error:
             logger.error(f"JSONalyzeQueryEngine oluşturulurken SQL hatası: {str(sql_error)}")
             logger.exception("SQL hata detayları:")
@@ -645,8 +653,7 @@ def initialize_app():
             
             # Hata durumunda daha basit yapılandırmayı dene
             try:
-                # Özel SQL Parser oluştur (yedek)
-                custom_sql_parser = CustomSQLParser()
+                logger.info("Basit yapılandırma ile JSONalyzeQueryEngine SQL Parser devre dışı bırakılarak oluşturuluyor")
                 
                 db_query_engine = JSONalyzeQueryEngine(
                     list_of_dict=json_rows,
@@ -654,9 +661,11 @@ def initialize_app():
                     verbose=True,
                     system_prompt=SYSTEM_PROMPT,
                     infer_schema=False,  # Şema çıkarımını devre dışı bırak
-                    sql_parser=custom_sql_parser  # Özel SQL parser kullan
+                    sql_parser=None,  # SQL Parser'ı devre dışı bırak
+                    output_direct_sql=True,  # LLM'in doğrudan SQL sorgusu döndürmesini sağla
+                    enforce_sql_syntax=True  # SQL sözdizimi kontrolünü zorla
                 )
-                logger.info("DB modülü basit yapılandırma ile yüklendi.")
+                logger.info("DB modülü basit yapılandırma ile yüklendi. SQL Parser devre dışı.")
             except Exception as fallback_error:
                 logger.error(f"Alternatif JSONalyzeQueryEngine yapılandırması da başarısız oldu: {str(fallback_error)}")
                 logger.exception("Fallback hata detayları:")
