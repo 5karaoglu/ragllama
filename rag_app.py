@@ -414,6 +414,7 @@ def query():
         data = request.json
         user_query = data.get('query')
         module = data.get('module', 'db')  # Varsayılan olarak 'db' kullan
+        show_thoughts = data.get('show_thoughts', True)  # Düşünce sürecini gösterme seçeneği
         
         if not user_query:
             return jsonify({"error": "Sorgu parametresi gerekli"}), 400
@@ -424,6 +425,9 @@ def query():
             logger.info("Sorgu öncesi debug handler event logları temizlendi.")
         
         # Modüle göre sorguyu işle
+        thought_process = []
+        llm_response = None
+        
         if module == 'db':
             if db_query_engine is None:
                 return jsonify({"error": "DB query engine henüz hazır değil"}), 503
@@ -431,6 +435,8 @@ def query():
             logger.info(f"DB modülü ile soru işleniyor: {user_query}")
             
             response = db_query_engine.query(user_query)
+            llm_response = str(response)
+            
         elif module == 'pdf':
             if pdf_query_engine is None:
                 return jsonify({"error": "PDF query engine henüz hazır değil"}), 503
@@ -438,31 +444,51 @@ def query():
             logger.info(f"PDF modülü ile soru işleniyor: {user_query}")
             
             response = pdf_query_engine.query(user_query)
+            llm_response = str(response)
+            
         else:
             return jsonify({"error": "Geçersiz modül parametresi"}), 400
         
-        # LLM giriş/çıkışlarını logla
-        if llama_debug_handler:
+        # LLM giriş/çıkışlarını ve düşünce sürecini topla
+        if llama_debug_handler and show_thoughts:
             event_pairs = llama_debug_handler.get_llm_inputs_outputs()
             if event_pairs:
                 for i, (start_event, end_event) in enumerate(event_pairs):
                     logger.info(f"LLM Çağrısı #{i+1}:")
-                    if 'messages' in start_event.payload:
-                        logger.info(f"Giriş mesajları: {start_event.payload['messages']}")
-                    if 'prompt' in start_event.payload:
-                        logger.info(f"Giriş promptu: {start_event.payload['prompt']}")
+                    
+                    # Çıkış yanıtındaki düşünme sürecini al
                     if 'response' in end_event.payload:
-                        logger.info(f"Çıkış yanıtı: {end_event.payload['response']}")
+                        response_text = end_event.payload['response']
+                        # Cevabı olduğu gibi alalım ama paragrafları ayıralım
+                        thought_process.append({
+                            "step": i+1,
+                            "thought": response_text
+                        })
+                        logger.info(f"Çıkış yanıtı: {response_text}")
+                    
+                    # Girdi mesajlarını da alabilirsiniz (isteğe bağlı)
+                    if 'messages' in start_event.payload:
+                        messages = start_event.payload['messages']
+                        for msg in messages:
+                            if msg.get('role') == 'system' or msg.get('role') == 'user':
+                                logger.info(f"Giriş mesajı ({msg.get('role')}): {msg.get('content')}")
             
             # İşlem bittikten sonra event loglarını temizle
             llama_debug_handler.flush_event_logs()
             logger.info("Sorgu sonrası debug handler event logları temizlendi.")
         
-        return jsonify({
+        # Yanıtı ve düşünce sürecini içeren JSON'ı döndür
+        response_data = {
             "query": user_query,
             "module": module,
-            "response": str(response)
-        })
+            "response": llm_response
+        }
+        
+        # Düşünce sürecini ekle (istenirse)
+        if show_thoughts and thought_process:
+            response_data["thoughts"] = thought_process
+        
+        return jsonify(response_data)
     
     except Exception as e:
         logger.error(f"Sorgu işlenirken hata oluştu: {str(e)}")
