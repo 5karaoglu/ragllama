@@ -75,67 +75,80 @@ YANLIŞ: İşte Ali'yi bulmak için bir sorgu yazıyorum: SELECT * FROM users WH
 Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
 """
 
-# Özel SQL Parser sınıfı oluşturalım
-class CustomSQLParser:
-    """Özel SQL ayrıştırıcı - LLM tarafından oluşturulan SQL sorgularını temizler ve düzenler."""
+# Özel SQL filtre fonksiyonu
+def filter_llm_response_for_sql(llm_response: str) -> str:
+    """
+    LLM'in ürettiği yanıttan SQL sorgusunu ayıklar.
     
-    def __init__(self):
-        """Özel SQL Parser'ı başlat."""
-        pass
-    
-    def parse_response_to_sql(self, sql_query: str, query_bundle: Optional[Any] = None) -> str:
-        """
-        LLM tarafından oluşturulan SQL sorgularını temizler ve düzenler.
+    Args:
+        llm_response: LLM'in ürettiği yanıt
         
-        Args:
-            sql_query: LLM tarafından oluşturulan SQL sorgusu
-            query_bundle: Query bundle nesnesi (isteğe bağlı)
-            
-        Returns:
-            Temizlenmiş ve düzenlenmiş SQL sorgusu
-        """
-        try:
-            logger.info(f"SQL PARSER GİRİŞ SORGUSU: {sql_query}")
-            
-            # Boşlukları kırp
-            sql_query = sql_query.strip()
-            
-            # Markdown kod bloklarını kaldır
-            sql_query = sql_query.replace("```", "")
-            sql_query = sql_query.replace("```sql", "")
-            sql_query = sql_query.replace("```SQL", "")
-            
-            # sql ve SQL kelimelerini sorgulardan kaldır
-            sql_query = re.sub(r"^sql\s+", "", sql_query, flags=re.IGNORECASE)
-            sql_query = re.sub(r"^SQL\s+", "", sql_query, flags=re.IGNORECASE)
-            
-            # Yorum satırlarını kaldır
-            sql_query = re.sub(r"#.*", "", sql_query)  # # ile başlayan yorumları kaldır
-            sql_query = re.sub(r"--.*", "", sql_query)  # -- ile başlayan yorumları kaldır
-            sql_query = re.sub(r"/\*.*?\*/", "", sql_query, flags=re.DOTALL)  # /* */ yorumlarını kaldır
-            
-            # SELECT ile başlayan kısmı al
-            if "SELECT" in sql_query.upper():
-                sql_query = sql_query[sql_query.upper().find("SELECT"):]
-            
-            # SQL sözdizimi kontrolü
+    Returns:
+        Temizlenmiş SQL sorgusu
+    """
+    try:
+        logger.info(f"LLM YANIT FİLTRESİ GİRİŞİ: {llm_response}")
+        
+        # Markdown kod bloklarını ara
+        sql_code_pattern = r"```sql(.*?)```"
+        sql_code_matches = re.findall(sql_code_pattern, llm_response, re.DOTALL)
+        
+        if sql_code_matches:
+            # Markdown kod bloğu içindeki SQL'i al
+            sql_query = sql_code_matches[0].strip()
+            logger.info(f"Markdown kod bloğundan SQL sorgusu ayıklandı: {sql_query}")
+            return sql_query
+        
+        # Alternatif: Markdown kod bloğunu farklı formatta ara
+        general_code_pattern = r"```(.*?)```"
+        code_matches = re.findall(general_code_pattern, llm_response, re.DOTALL)
+        
+        if code_matches:
+            for code_block in code_matches:
+                # Kod bloğunun içeriğinden SELECT ifadesi içeren bir şey var mı?
+                if re.search(r'(?i)SELECT\s+', code_block):
+                    sql_query = code_block.strip()
+                    if not sql_query.endswith(";"):
+                        sql_query += ";"
+                    logger.info(f"Genel kod bloğundan SQL sorgusu ayıklandı: {sql_query}")
+                    return sql_query
+        
+        # Alternatif: Markdown blok olmadan SELECT ifadesini ara
+        select_pattern = r"(?i)SELECT\s+.*?(?:;|$)"
+        select_matches = re.findall(select_pattern, llm_response, re.DOTALL)
+        
+        if select_matches:
+            # SELECT ile başlayan ilk sorguyu al
+            sql_query = select_matches[0].strip()
+            if not sql_query.endswith(";"):
+                sql_query += ";"
+            logger.info(f"SELECT deseninden SQL sorgusu ayıklandı: {sql_query}")
+            return sql_query
+        
+        # Tüm yorum satırlarını kaldır
+        cleaned_sql = re.sub(r"#.*", "", llm_response)  # # ile başlayan yorumları kaldır
+        cleaned_sql = re.sub(r"--.*", "", cleaned_sql)  # -- ile başlayan yorumları kaldır
+        cleaned_sql = re.sub(r"/\*.*?\*/", "", cleaned_sql, flags=re.DOTALL)  # /* */ yorumlarını kaldır
+        
+        # Boşlukları kırp
+        cleaned_sql = cleaned_sql.strip()
+        
+        # SELECT ile başlayan kısmı bul
+        if "SELECT" in cleaned_sql.upper():
+            sql_query = cleaned_sql[cleaned_sql.upper().find("SELECT"):]
             sql_query = sql_query.strip()
             if not sql_query.endswith(";"):
                 sql_query += ";"
-                
-            # İsteğe bağlı olarak sorguyu test et
-            # sqlite3.connect(":memory:").execute(sql_query)
-            
-            logger.info(f"SQL PARSER DÖNÜŞ SORGUSU: {sql_query}")
+            logger.info(f"Temizlenmiş metinden SQL sorgusu ayıklandı: {sql_query}")
             return sql_query
-        except Exception as e:
-            # Herhangi bir hata durumunda orijinal sorguyu sadeleştirerek döndür
-            logger.error(f"SQL Parser hatası: {str(e)}")
-            logger.error(f"Orijinal sorgu: {sql_query}")
-            cleaned_query = re.sub(r"#.*", "", sql_query)  # # işaretli yorumları kaldır
-            cleaned_query = f"SELECT * FROM table_data LIMIT 5;" # Güvenli sorgu ile değiştir
-            logger.info(f"SQL PARSER HATA SONRASI DÖNÜŞ SORGUSU: {cleaned_query}")
-            return cleaned_query
+        
+        # Hiçbir şey bulunamazsa güvenli bir sorgu döndür
+        logger.warning("SQL sorgusu bulunamadı, güvenli sorgu döndürülüyor")
+        return "SELECT * FROM table_data LIMIT 5;"
+    
+    except Exception as e:
+        logger.error(f"SQL filtreleme hatası: {str(e)}")
+        return "SELECT * FROM table_data LIMIT 5;"
 
 # Loglama yapılandırması
 def setup_logging():
@@ -657,8 +670,8 @@ def initialize_app():
         
         # JSONalyzeQueryEngine oluştur
         try:
-            # SQL Parser'ı devre dışı bırak (None olarak ayarla)
-            logger.info("JSONalyzeQueryEngine SQL Parser devre dışı bırakılarak oluşturuluyor")
+            # SQL Parser'ı devre dışı bırak ve kendi filtreleme fonksiyonumuzu ekle
+            logger.info("JSONalyzeQueryEngine özel filtre ile oluşturuluyor")
             
             # JSONalyzeQueryEngine oluştur
             db_query_engine = JSONalyzeQueryEngine(
@@ -675,7 +688,28 @@ def initialize_app():
                 allow_multiple_queries=False  # Birden fazla sorguya izin verme
             )
             
-            logger.info("DB modülü başarıyla yüklendi. SQL Parser devre dışı.")
+            # Monkey patching yoluyla JSONalyzeQueryEngine'in _analyzer metodunu düzenleyelim
+            # Bu, sorguyu execute etmeden önce filtrelemek için kullanılacak
+            original_analyzer = db_query_engine._analyzer
+            
+            def filtered_analyzer(*args, **kwargs):
+                try:
+                    sql_query, table_schema, results = original_analyzer(*args, **kwargs)
+                    # Şimdi SQL sorgusunu filtreleme fonksiyonumuzdan geçirelim
+                    if sql_query and isinstance(sql_query, str):
+                        filtered_sql = filter_llm_response_for_sql(sql_query)
+                        logger.info(f"ORİJİNAL SQL: {sql_query}")
+                        logger.info(f"FİLTRELENMİŞ SQL: {filtered_sql}")
+                        return filtered_sql, table_schema, results
+                    return sql_query, table_schema, results
+                except Exception as e:
+                    logger.error(f"Analyzer düzeltme hatası: {str(e)}")
+                    return args[0], None, []
+            
+            # Analyzer metodunu düzenlenmiş versiyonuyla değiştirelim
+            db_query_engine._analyzer = filtered_analyzer
+            
+            logger.info("DB modülü başarıyla yüklendi. Özel SQL filtreleme etkin.")
         except Exception as sql_error:
             logger.error(f"JSONalyzeQueryEngine oluşturulurken SQL hatası: {str(sql_error)}")
             logger.exception("SQL hata detayları:")
@@ -683,7 +717,7 @@ def initialize_app():
             
             # Hata durumunda daha basit yapılandırmayı dene
             try:
-                logger.info("Basit yapılandırma ile JSONalyzeQueryEngine SQL Parser devre dışı bırakılarak oluşturuluyor")
+                logger.info("Basit yapılandırma ile JSONalyzeQueryEngine oluşturuluyor")
                 
                 db_query_engine = JSONalyzeQueryEngine(
                     list_of_dict=json_rows,
@@ -695,7 +729,28 @@ def initialize_app():
                     output_direct_sql=True,  # LLM'in doğrudan SQL sorgusu döndürmesini sağla
                     enforce_sql_syntax=True  # SQL sözdizimi kontrolünü zorla
                 )
-                logger.info("DB modülü basit yapılandırma ile yüklendi. SQL Parser devre dışı.")
+                
+                # Basitleştirilmiş filtrelemeyi yine de ekleyelim
+                original_analyzer = db_query_engine._analyzer
+                
+                def simple_filtered_analyzer(*args, **kwargs):
+                    try:
+                        sql_query, table_schema, results = original_analyzer(*args, **kwargs)
+                        # Şimdi SQL sorgusunu filtreleme fonksiyonumuzdan geçirelim
+                        if sql_query and isinstance(sql_query, str):
+                            filtered_sql = filter_llm_response_for_sql(sql_query)
+                            logger.info(f"ORİJİNAL SQL (BASİT): {sql_query}")
+                            logger.info(f"FİLTRELENMİŞ SQL (BASİT): {filtered_sql}")
+                            return filtered_sql, table_schema, results
+                        return sql_query, table_schema, results
+                    except Exception as e:
+                        logger.error(f"Basit analyzer düzeltme hatası: {str(e)}")
+                        return args[0], None, []
+                
+                # Analyzer metodunu düzenlenmiş versiyonuyla değiştirelim
+                db_query_engine._analyzer = simple_filtered_analyzer
+                
+                logger.info("DB modülü basit yapılandırma ile yüklendi. Özel SQL filtreleme etkin.")
             except Exception as fallback_error:
                 logger.error(f"Alternatif JSONalyzeQueryEngine yapılandırması da başarısız oldu: {str(fallback_error)}")
                 logger.exception("Fallback hata detayları:")
