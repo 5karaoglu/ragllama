@@ -6,10 +6,12 @@ import json
 import logging
 import colorlog
 import torch
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 from flask import Flask, request, jsonify
 import PyPDF2
+import re
+import sqlite3
 
 from llama_index.core import (
     Settings,
@@ -49,18 +51,86 @@ Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kur
 9. Yanıtlarınızı yapılandırırken, önemli bilgileri vurgulayın ve gerektiğinde maddeler halinde sunun.
 10. Teknik terimleri açıklayın ve gerektiğinde örnekler verin.
 
-SQL sorguları oluştururken aşağıdaki kurallara uyun:
-- SQLite sözdizimini kullanın.
-- SQLite'da yorum satırları '#' işareti ile değil, '--' (iki tire) ile başlar. 
-- Örnek doğru yorum: SELECT * FROM users -- Bu bir yorumdur
-- Örnek yanlış yorum: SELECT * FROM users # Bu bir yorumdur (KULLANMAYIN!)
-- Sorgunun içinde yorum yazmaktan tamamen kaçınmaya çalışın.
-- Sorgunuzu basit ve tek bir SQL ifadesi olarak yazın.
-- Türkçe karakterleri içeren sütun adlarını doğru şekilde kullanın.
-- Sütun ve tablo adlarında boşluk veya özel karakter varsa ters tırnak (`) kullanın.
+ÖNEMLİ - SQL SORGULARI İÇİN KRİTİK KURALLAR:
+1. SQLite sözdizimi kurallarına kesinlikle uyun.
+2. SQL sorgularınızda HİÇBİR ŞEKİLDE '#' karakterini KULLANMAYIN! 
+3. SQL sorgularınıza KESİNLİKLE yorum satırı EKLEMEYİN!
+4. Gerekiyorsa yorum SADECE '--' (iki tire) ile başlamalıdır.
+5. Örnek: SELECT * FROM users WHERE id = 1; -- bu şekilde.
+6. SQL sorgularını mümkün olduğunca basit tutun.
+7. SQL sorgularını tek bir ifade olarak yazın.
+8. SQL sorgusunu doğrudan çalıştırılabilir formatta döndürün - açıklama olmadan.
+9. Sorgu sonucunu ayrı bir yanıt olarak verin, sorguyu yanıta dahil etmeyin.
+10. Eğer sorgu oluşturmakta zorlanırsanız, verilere doğrudan bakıp analiz yapın.
+
+ÖRNEKLER:
+DOĞRU: SELECT * FROM users WHERE name = 'Ali';
+YANLIŞ: SELECT * FROM users WHERE name = 'Ali'; # Bu Ali'yi bulan sorgu
 
 Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
 """
+
+# Özel SQL Parser sınıfı oluşturalım
+class CustomSQLParser:
+    """Özel SQL ayrıştırıcı - LLM tarafından oluşturulan SQL sorgularını temizler ve düzenler."""
+    
+    def __init__(self):
+        """Özel SQL Parser'ı başlat."""
+        pass
+    
+    def parse_response_to_sql(self, sql_query: str, query_bundle: Optional[Any] = None) -> str:
+        """
+        LLM tarafından oluşturulan SQL sorgularını temizler ve düzenler.
+        
+        Args:
+            sql_query: LLM tarafından oluşturulan SQL sorgusu
+            query_bundle: Query bundle nesnesi (isteğe bağlı)
+            
+        Returns:
+            Temizlenmiş ve düzenlenmiş SQL sorgusu
+        """
+        try:
+            logger.info(f"SQL PARSER GİRİŞ SORGUSU: {sql_query}")
+            
+            # Boşlukları kırp
+            sql_query = sql_query.strip()
+            
+            # Markdown kod bloklarını kaldır
+            sql_query = sql_query.replace("```", "")
+            sql_query = sql_query.replace("```sql", "")
+            sql_query = sql_query.replace("```SQL", "")
+            
+            # sql ve SQL kelimelerini sorgulardan kaldır
+            sql_query = re.sub(r"^sql\s+", "", sql_query, flags=re.IGNORECASE)
+            sql_query = re.sub(r"^SQL\s+", "", sql_query, flags=re.IGNORECASE)
+            
+            # Yorum satırlarını kaldır
+            sql_query = re.sub(r"#.*", "", sql_query)  # # ile başlayan yorumları kaldır
+            sql_query = re.sub(r"--.*", "", sql_query)  # -- ile başlayan yorumları kaldır
+            sql_query = re.sub(r"/\*.*?\*/", "", sql_query, flags=re.DOTALL)  # /* */ yorumlarını kaldır
+            
+            # SELECT ile başlayan kısmı al
+            if "SELECT" in sql_query.upper():
+                sql_query = sql_query[sql_query.upper().find("SELECT"):]
+            
+            # SQL sözdizimi kontrolü
+            sql_query = sql_query.strip()
+            if not sql_query.endswith(";"):
+                sql_query += ";"
+                
+            # İsteğe bağlı olarak sorguyu test et
+            # sqlite3.connect(":memory:").execute(sql_query)
+            
+            logger.info(f"SQL PARSER DÖNÜŞ SORGUSU: {sql_query}")
+            return sql_query
+        except Exception as e:
+            # Herhangi bir hata durumunda orijinal sorguyu sadeleştirerek döndür
+            logger.error(f"SQL Parser hatası: {str(e)}")
+            logger.error(f"Orijinal sorgu: {sql_query}")
+            cleaned_query = re.sub(r"#.*", "", sql_query)  # # işaretli yorumları kaldır
+            cleaned_query = f"SELECT * FROM table_data LIMIT 5;" # Güvenli sorgu ile değiştir
+            logger.info(f"SQL PARSER HATA SONRASI DÖNÜŞ SORGUSU: {cleaned_query}")
+            return cleaned_query
 
 # Loglama yapılandırması
 def setup_logging():
@@ -552,13 +622,19 @@ def initialize_app():
         
         # JSONalyzeQueryEngine oluştur
         try:
+            # Özel SQL Parser oluştur
+            custom_sql_parser = CustomSQLParser()
+            logger.info("Özel SQL Parser oluşturuldu")
+            
+            # JSONalyzeQueryEngine oluştur
             db_query_engine = JSONalyzeQueryEngine(
                 list_of_dict=json_rows,
                 llm=llm,
                 verbose=True,
                 system_prompt=SYSTEM_PROMPT,
                 synthesize_response=True,  # SQL sorgusu çalıştırılsa bile yanıtı sentezle
-                sql_optimizer=True  # SQL sorgularını optimize et
+                sql_optimizer=True,  # SQL sorgularını optimize et
+                sql_parser=custom_sql_parser  # Özel SQL parser kullan
             )
             
             logger.info("DB modülü başarıyla yüklendi.")
@@ -569,12 +645,16 @@ def initialize_app():
             
             # Hata durumunda daha basit yapılandırmayı dene
             try:
+                # Özel SQL Parser oluştur (yedek)
+                custom_sql_parser = CustomSQLParser()
+                
                 db_query_engine = JSONalyzeQueryEngine(
                     list_of_dict=json_rows,
                     llm=llm,
                     verbose=True,
                     system_prompt=SYSTEM_PROMPT,
-                    infer_schema=False  # Şema çıkarımını devre dışı bırak
+                    infer_schema=False,  # Şema çıkarımını devre dışı bırak
+                    sql_parser=custom_sql_parser  # Özel SQL parser kullan
                 )
                 logger.info("DB modülü basit yapılandırma ile yüklendi.")
             except Exception as fallback_error:
