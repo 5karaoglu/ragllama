@@ -519,8 +519,38 @@ def query():
                 
             logger.info(f"DB modülü ile soru işleniyor: {user_query}")
             
+            # LLM sorgu takibini etkinleştir
+            from llama_index.core.callbacks import CallbackManager
+            import types
+            
+            # JSONalyzeQueryEngine sorgularını gözlemleme
+            original_query = db_query_engine.query
+            
+            def logging_query_wrapper(self, query_str, **kwargs):
+                logger.info(f"LLM'e gönderilen sorgu: {query_str}")
+                response = original_query(query_str, **kwargs)
+                
+                # SQL kodunu ve LLM'in düşüncelerini logla
+                try:
+                    if hasattr(response, 'metadata') and response.metadata is not None:
+                        if 'sql_query' in response.metadata:
+                            logger.info(f"ÜRETİLEN SQL SORGUSU: {response.metadata['sql_query']}")
+                        if 'result' in response.metadata:
+                            logger.info(f"SQL SORGU SONUCU: {response.metadata['result']}")
+                except Exception as log_error:
+                    logger.error(f"Yanıt log hatası: {str(log_error)}")
+                
+                return response
+            
+            # Orijinal query fonksiyonunu geçici olarak değiştir
+            db_query_engine.query = types.MethodType(logging_query_wrapper, db_query_engine)
+            
+            # Sorguyu çalıştır
             response = db_query_engine.query(user_query)
             llm_response = str(response)
+            
+            # Fonksiyonu eski haline getir
+            db_query_engine.query = original_query
             
         elif module == 'pdf':
             if pdf_query_engine is None:
