@@ -11,9 +11,20 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
-# NCCL'i pip üzerinden yükle
-RUN pip install --no-cache-dir nvidia-pyindex && \
-    pip install --no-cache-dir nvidia-nccl-cu12
+# NVIDIA paket deposundan NCCL yükleme
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /etc/apt/keyrings && \
+    wget -qO- https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | gpg --dearmor -o /etc/apt/keyrings/cuda-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/cuda-archive-keyring.gpg] https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /" | tee /etc/apt/sources.list.d/cuda-ubuntu2004-x86_64.list && \
+    apt-get update && \
+    apt-get install -y libnccl2 libnccl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# NCCL Kütüphanesini LD_LIBRARY_PATH'e ekle
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
 
 # CUDA bellek yönetimi için çevre değişkenleri
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512

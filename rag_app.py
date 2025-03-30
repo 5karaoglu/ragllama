@@ -249,14 +249,13 @@ def setup_llm():
                 llm = Vllm(
                     model=model_name,  # doğru parametre: model
                     temperature=0.7,
-                    context_window=8192,  # Maksimum bağlam penceresi
-                    max_new_tokens=1024,  # Daha uzun yanıtlar için
+                    max_new_tokens=1024,  # Maksimum yeni token sayısı
                     top_p=0.95,
                     tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
                     dtype="float16" if device == "cuda" else "float32",
                     trust_remote_code=True,
-                    # vLLM'in diğer parametrelerini kwargs olarak geçirelim
-                    kwargs={
+                    # vLLM'in diğer parametrelerini vllm_kwargs olarak geçirelim
+                    vllm_kwargs={
                         "gpu_memory_utilization": 0.85,  # GPU belleği kullanım oranı
                         "enforce_eager": False,  # Daha yüksek verimlilik için eager modu kapatın
                         "enable_lora": False,  # LoRA desteğini devre dışı bırak
@@ -320,8 +319,8 @@ def setup_llm():
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
-            context_window=8192,  # Daha uzun bağlam penceresi
-            max_new_tokens=1024,  # Daha uzun yanıtlar için
+            model_context_length=8192,  # Modelin maksimum bağlam penceresi uzunluğu
+            max_new_tokens=1024,  # Üretilecek maksimum yeni token sayısı
             generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
         )
         
@@ -352,8 +351,8 @@ def setup_llm():
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
-            context_window=4096,
-            max_new_tokens=512,
+            model_context_length=8192,  # Modelin maksimum bağlam penceresi uzunluğu
+            max_new_tokens=1024,  # Üretilecek maksimum yeni token sayısı
             generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
         )
         
