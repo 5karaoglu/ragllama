@@ -53,7 +53,8 @@ RUN mkdir -p /tmp/ray && \
 
 # VLLM ve diğer bağımlılıkları yükle
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
+    pip config set global.timeout 300 && \
+    pip install --no-cache-dir --default-timeout=300 \
     vllm==0.3.0 \
     ray==2.9.0 \
     pynccl \
