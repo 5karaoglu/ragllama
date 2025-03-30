@@ -1,14 +1,20 @@
 FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
-# Sistem bağımlılıklarını yükle
+# NVIDIA apt repo ekle
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ca-certificates \
+    gnupg \
+    && curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | apt-key add - \
+    && echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64 /" > /etc/apt/sources.list.d/nvidia-cuda.list \
+    && echo "deb https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64 /" > /etc/apt/sources.list.d/nvidia-machine-learning.list
+
+# Sistem bağımlılıklarını yükle
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     wget \
     software-properties-common \
     build-essential \
-    ca-certificates \
-    gnupg \
     procps \
     libnccl2 \
     libnccl-dev \
