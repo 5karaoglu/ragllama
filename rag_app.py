@@ -231,11 +231,63 @@ def setup_llm():
     
     logger.info(f"Cihaz: {device}")
     
-    # Önce model ve tokenizer'ı manuel olarak yükleyelim
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    
+    # vLLM kullanarak daha hızlı ve bellek verimli çıkarım yapmayı deneyelim
     try:
-        logger.info(f"Model yükleniyor: {model_name}")
+        logger.info("vLLM ile model yükleme deneniyor...")
+        
+        # LLM tipi için çevre değişkenini kontrol et
+        llm_type = os.environ.get("LLM_TYPE", "vllm").lower()
+        
+        if llm_type == "vllm" and device == "cuda":
+            logger.info("vLLM kullanılarak model yükleniyor...")
+            
+            try:
+                # vLLM entegrasyonunu LlamaIndex üzerinden yükleyelim
+                from llama_index.llms.vllm import VLLMLangChainCompatibility
+
+                # vLLM'i yapılandır - PagedAttention özelliğinden faydalanır
+                from vllm import LLM as VLLM
+                vllm_model = VLLM(
+                    model=model_name,
+                    tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
+                    dtype="float16" if device == "cuda" else "float32",
+                    trust_remote_code=True,
+                    max_model_len=8192,  # Maksimum bağlam penceresi
+                    download_dir=cache_dir,
+                    gpu_memory_utilization=0.85,  # GPU belleği kullanım oranı
+                    enforce_eager=False,  # Daha yüksek verimlilik için eager modu kapatın
+                    enable_lora=False,  # LoRA desteğini devre dışı bırak
+                )
+                
+                # LlamaIndex uyumlu wrapper oluştur
+                llm = VLLMLangChainCompatibility(
+                    client=vllm_model,
+                    max_new_tokens=1024,
+                    temperature=0.7,
+                    top_p=0.95,
+                    streaming=False
+                )
+                
+                logger.info("vLLM ile model başarıyla yüklendi!")
+                return llm
+                
+            except ImportError as ie:
+                logger.error(f"vLLM yüklenirken ImportError: {str(ie)}")
+                logger.warning("vLLM yüklenemedi, klasik HuggingFace modeline geçiliyor...")
+            except Exception as ve:
+                logger.error(f"vLLM model yükleme hatası: {str(ve)}")
+                logger.warning("vLLM hatası nedeniyle klasik HuggingFace modeline geçiliyor...")
+        else:
+            if llm_type != "vllm":
+                logger.info(f"LLM_TYPE={llm_type} olarak ayarlandı, HuggingFace kullanılıyor...")
+            else:
+                logger.info("CUDA kullanılamadığı için vLLM atlanıyor, HuggingFace kullanılıyor...")
+                
+        # Klasik HuggingFace modelini yükle (vLLM başarısız olursa veya istenmezse)
+        logger.info("Klasik HuggingFace modeli yükleniyor...")
+        
+        # Önce model ve tokenizer'ı manuel olarak yükleyelim
+        from transformers import AutoModelForCausalLM, AutoTokenizer
         
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
@@ -262,10 +314,11 @@ def setup_llm():
             **model_kwargs
         )
         
-        logger.info("Model başarıyla yüklendi")
+        logger.info("HuggingFace modeli başarıyla yüklendi")
         logger.info(f"Model cihazı: {next(model.parameters()).device}")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
+        from llama_index.llms.huggingface import HuggingFaceLLM
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
@@ -297,6 +350,7 @@ def setup_llm():
             device_map="auto" if device == "cuda" else None
         )
         
+        from llama_index.llms.huggingface import HuggingFaceLLM
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
@@ -503,6 +557,87 @@ def status():
         "pdf_query_engine_ready": pdf_query_engine is not None
     })
 
+@app.route('/api/system-info', methods=['GET'])
+def system_info():
+    """Sistem durumu ve LLM konfigürasyonu hakkında detaylı bilgi sağlar."""
+    try:
+        # Kullanılan LLM tipini belirle
+        llm_type = os.environ.get("LLM_TYPE", "vllm").lower()
+        is_vllm = "vllm" in llm_type and hasattr(Settings.llm, "client")
+        
+        # Bellek kullanımını hesapla
+        gpu_info = []
+        total_memory_used = 0
+        total_memory_available = 0
+        
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                memory_used = torch.cuda.memory_allocated(i) / 1024**3
+                memory_total = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                
+                gpu_info.append({
+                    "index": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "memory_used_gb": round(memory_used, 2),
+                    "memory_total_gb": round(memory_total, 2),
+                    "utilization_percent": round((memory_used / memory_total) * 100, 2)
+                })
+                
+                total_memory_used += memory_used
+                total_memory_available += memory_total
+        
+        # vLLM konfigürasyonu (eğer kullanılıyorsa)
+        vllm_config = None
+        if is_vllm:
+            vllm_config = {
+                "paged_attention": os.environ.get("VLLM_USE_PAGED_ATTENTION", "true") == "true",
+                "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
+                "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.85")),
+                "max_parallel_loading_workers": int(os.environ.get("VLLM_MAX_PARALLEL_LOADING_WORKERS", "2")),
+                "attention_shard_size": int(os.environ.get("VLLM_ATTENTION_SHARD_SIZE", "1024"))
+            }
+        
+        # Yanıt hazırla
+        response = {
+            "status": "online",
+            "llm_type": "vllm" if is_vllm else "huggingface",
+            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"),
+            "api_modules": {
+                "db_query_engine_ready": db_query_engine is not None,
+                "pdf_query_engine_ready": pdf_query_engine is not None
+            },
+            "gpu": {
+                "available": torch.cuda.is_available(),
+                "count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+                "devices": gpu_info,
+                "total_memory_used_gb": round(total_memory_used, 2),
+                "total_memory_available_gb": round(total_memory_available, 2),
+                "overall_utilization_percent": round((total_memory_used / total_memory_available) * 100, 2) if total_memory_available > 0 else 0
+            }
+        }
+        
+        # vLLM konfigürasyonunu ekle (eğer varsa)
+        if vllm_config:
+            response["vllm_config"] = vllm_config
+            
+            # vLLM performans iyileştirmeleri hakkında bilgi ver
+            response["vllm_optimizations"] = {
+                "paged_attention": "KV cache bellek parçalanmasını azaltır ve bellek verimliliğini artırır.",
+                "continuous_batching": "Farklı uzunluktaki sorguları dinamik olarak gruplar ve GPU kullanımını optimize eder.",
+                "tensor_parallelism": "Büyük modelleri birden fazla GPU'ya dağıtarak bellek sınırlamalarını aşar.",
+                "estimated_speedup": "Geleneksel HuggingFace'e göre 3-24x arası hızlanma sağlar."
+            }
+        
+        return jsonify(response)
+    
+    except Exception as e:
+        logger.error(f"Sistem bilgisi oluşturulurken hata: {str(e)}")
+        logger.exception("Hata detayları:")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
 @app.route('/api/query', methods=['POST'])
 def query():
     """Kullanıcı sorgusunu işler ve yanıt döndürür."""
@@ -630,12 +765,30 @@ def initialize_app():
     
     logger.info("RAG uygulaması başlatılıyor...")
     
+    # LLM tipi için çevre değişkenini kontrol et
+    llm_type = os.environ.get("LLM_TYPE", "vllm").lower()
+    logger.info(f"Kullanılacak LLM tipi: {llm_type}")
+    
     # Debug handler'ı kur
     setup_debug_handler()
     
     # Modelleri yapılandır
     llm = setup_llm()
     embed_model = setup_embedding_model()
+    
+    # LLM tipi ve konfigürasyon bilgilerini logla
+    try:
+        llm_info = f"LLM tipi: {type(llm).__name__}"
+        if "vllm" in llm_type and hasattr(llm, "client"):
+            # vLLM konfigürasyon bilgilerini logla
+            llm_info += f" (vLLM, Tensor Paralel Boyutu: {os.environ.get('VLLM_TENSOR_PARALLEL_SIZE', 'Tanımlanmamış')})"
+            logger.info(f"vLLM başarıyla yapılandırıldı, PagedAttention etkin: {os.environ.get('VLLM_USE_PAGED_ATTENTION', 'Tanımlanmamış')}")
+            logger.info(f"vLLM GPU Bellek Kullanım Oranı: {os.environ.get('VLLM_GPU_MEMORY_UTILIZATION', 'Tanımlanmamış')}")
+        else:
+            llm_info += " (HuggingFace)"
+        logger.info(llm_info)
+    except Exception as e:
+        logger.error(f"LLM bilgilerini loglarken hata: {str(e)}")
     
     # Global ayarları yapılandır
     Settings.llm = llm
@@ -815,6 +968,20 @@ def initialize_app():
         logger.exception("Hata detayları:")
         logger.warning("PDF modülü atlanıyor.")
         pdf_query_engine = None
+    
+    # Bellek kullanımını raporla
+    try:
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                logger.info(f"GPU {i} Bellek Kullanımı: {torch.cuda.memory_allocated(i) / 1024**3:.2f} GB / {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
+            
+            # vLLM ise ek bilgiler göster
+            if "vllm" in llm_type and hasattr(llm, "client"):
+                logger.info("vLLM kullanılıyor - KV cache bellek optimizasyonu aktif.")
+                logger.info(f"vLLM PagedAttention: {os.environ.get('VLLM_USE_PAGED_ATTENTION', 'Tanımlanmamış')}")
+                logger.info("PagedAttention, KV cache bellek parçalanmasını önemli ölçüde azaltır.")
+    except Exception as mem_error:
+        logger.error(f"Bellek kullanımı raporlama hatası: {str(mem_error)}")
     
     logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
     return True

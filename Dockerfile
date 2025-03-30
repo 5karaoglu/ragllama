@@ -9,6 +9,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
     wget \
     nvidia-cuda-toolkit \
+    libcublas-dev \
+    libcurand-dev \
+    libcusparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # CUDA bellek yönetimi için çevre değişkenleri
@@ -20,6 +23,13 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 
+# vLLM yapılandırması
+ENV VLLM_USE_PAGED_ATTENTION=true
+ENV VLLM_ATTENTION_SHARD_SIZE=1024
+ENV VLLM_MAX_PARALLEL_LOADING_WORKERS=2
+ENV VLLM_GPU_MEMORY_UTILIZATION=0.85
+ENV VLLM_TENSOR_PARALLEL_SIZE=2
+
 # NVIDIA sürücü bilgilerini kontrol et
 RUN nvidia-smi || echo "nvidia-smi komutu çalıştırılamadı, ancak bu normal olabilir. Docker çalıştırılırken NVIDIA sürücüleri kullanılabilir olacaktır."
 
@@ -29,6 +39,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # PyTorch CUDA kullanılabilirliğini kontrol et
 RUN python -c "import torch; print('CUDA kullanılabilir:', torch.cuda.is_available()); print('CUDA sürümü:', torch.version.cuda if torch.cuda.is_available() else 'Yok')" || echo "PyTorch CUDA kontrolü başarısız oldu, ancak bu normal olabilir."
+
+# vLLM kurulumunu kontrol et
+RUN python -c "from vllm import LLM; print('vLLM başarıyla kuruldu.')" || echo "vLLM kontrolü başarısız oldu, ancak bu normal olabilir."
 
 # Uygulama dosyalarını kopyala
 COPY rag_app.py .

@@ -19,9 +19,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=0,1  # İki GPU'yu da görünür yap
+      - LLM_TYPE=vllm  # vLLM kullanımını etkinleştir (seçenek: huggingface)
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512  # CUDA bellek ayarlarını artır
       - TRANSFORMERS_CACHE=/app/model_cache  # Transformers önbelleğini ayarla
       - HF_HOME=/app/model_cache  # HuggingFace önbelleğini ayarla
+      - VLLM_USE_PAGED_ATTENTION=true  # vLLM PagedAttention etkinleştir
+      - VLLM_ATTENTION_SHARD_SIZE=1024  # vLLM için dikkat mekanizması parça boyutu
+      - VLLM_MAX_PARALLEL_LOADING_WORKERS=2  # Model yükleme için paralel işçi sayısı
+      - VLLM_GPU_MEMORY_UTILIZATION=0.85  # GPU bellek kullanım oranı
+      - VLLM_TENSOR_PARALLEL_SIZE=2  # 2 GPU üzerinde tensor paralelizmi
       - OMP_NUM_THREADS=8  # CPU iş parçacığı sayısını sınırla
       - TOKENIZERS_PARALLELISM=true  # Tokenizer paralelliğini etkinleştir
     restart: unless-stopped
