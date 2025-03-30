@@ -61,6 +61,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     Flask==2.3.3 \
     llama-index==0.9.16 \
     pypdf \
+    PyPDF2 \
     pandas==2.1.1 \
     langchain==0.0.312 \
     sentence_transformers==2.2.2 \
@@ -71,6 +72,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     llama-index-embeddings-huggingface==0.1.3 \
     llama-index-readers-file==0.1.4 \
     colorlog \
+    transformers \
+    accelerate \
     && python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}')" \
     && python -c "from vllm import LLM; print('vLLM imported successfully')"
 
