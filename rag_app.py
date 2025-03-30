@@ -186,14 +186,29 @@ def setup_llm():
             logger.info(f"CUDA cihaz sayısı: {torch.cuda.device_count()}")
             for i in range(torch.cuda.device_count()):
                 logger.info(f"CUDA cihaz {i}: {torch.cuda.get_device_name(i)}")
+                # Bellek bilgilerini detaylı logla
+                total_mem = torch.cuda.get_device_properties(i).total_memory / 1024**3
+                reserved_mem = torch.cuda.memory_reserved(i) / 1024**3
+                allocated_mem = torch.cuda.memory_allocated(i) / 1024**3
+                free_mem = (torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i)) / 1024**3
+                logger.info(f"GPU {i} Bellek: Toplam {total_mem:.2f} GB, Ayrılmış {reserved_mem:.2f} GB, Kullanılmış {allocated_mem:.2f} GB, Boş {free_mem:.2f} GB")
             
-            # CUDA önbelleğini temizle
+            # CUDA önbelleğini temizle (kapsamlı temizlik)
+            logger.info("GPU bellek önbelleği temizleniyor...")
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()  # Tüm CUDA işlemlerinin tamamlanmasını bekle
             gc.collect()
+            
+            # Temizlik sonrası bellek durumunu kontrol et
+            for i in range(torch.cuda.device_count()):
+                allocated_after = torch.cuda.memory_allocated(i) / 1024**3
+                free_after = (torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i)) / 1024**3
+                logger.info(f"Temizlik sonrası GPU {i}: Kullanılmış {allocated_after:.2f} GB, Boş {free_after:.2f} GB")
             
             # CUDA ortam değişkenlerini kontrol et
             logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Ayarlanmamış')}")
             logger.info(f"CUDA_HOME: {os.environ.get('CUDA_HOME', 'Ayarlanmamış')}")
+            logger.info(f"PYTORCH_CUDA_ALLOC_CONF: {os.environ.get('PYTORCH_CUDA_ALLOC_CONF', 'Ayarlanmamış')}")
         else:
             logger.warning("CUDA kullanılamıyor! CPU kullanılacak.")
             logger.warning("NVIDIA sürücülerini ve CUDA kurulumunu kontrol edin.")
@@ -226,8 +241,8 @@ def setup_llm():
                     download_dir=cache_dir,  # İndirme dizinini doğrudan ana parametre olarak veriyoruz
                     # vLLM'in diğer parametrelerini vllm_kwargs olarak geçirelim
                     vllm_kwargs={
-                        "gpu_memory_utilization": 0.85,  # GPU belleği kullanım oranı
-                        "enforce_eager": False,  # Daha yüksek verimlilik için eager modu kapatın
+                        "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.60")),  # GPU belleği kullanım oranını azalt
+                        "enforce_eager": os.environ.get("VLLM_ENFORCE_EAGER", "true").lower() == "true",  # Eager modu için çevre değişkenini kullan
                         "enable_lora": False  # LoRA desteğini devre dışı bırak
                     }
                 )
@@ -545,15 +560,27 @@ def system_info():
                 total_memory_available += memory_total
         
         # vLLM konfigürasyonu (eğer kullanılıyorsa)
-        vllm_config = None
-        if is_vllm:
-            vllm_config = {
-                "paged_attention": os.environ.get("VLLM_USE_PAGED_ATTENTION", "true") == "true",
-                "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
-                "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.85")),
-                "max_parallel_loading_workers": int(os.environ.get("VLLM_MAX_PARALLEL_LOADING_WORKERS", "2")),
-                "attention_shard_size": int(os.environ.get("VLLM_ATTENTION_SHARD_SIZE", "1024"))
-            }
+        vllm_config = {
+            "paged_attention": os.environ.get("VLLM_USE_PAGED_ATTENTION", "true") == "true",
+            "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
+            "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.60")),
+            "max_parallel_loading_workers": int(os.environ.get("VLLM_MAX_PARALLEL_LOADING_WORKERS", "2")),
+            "attention_shard_size": int(os.environ.get("VLLM_ATTENTION_SHARD_SIZE", "1024"))
+        }
+        
+        # Bellek kullanım istatistiklerini ekle
+        memory_stats = {
+            "current_usage_per_gpu": [
+                {
+                    "gpu_id": i,
+                    "allocated_gb": round(torch.cuda.memory_allocated(i) / 1024**3, 2),
+                    "reserved_gb": round(torch.cuda.memory_reserved(i) / 1024**3, 2),
+                    "utilization_percent": round(torch.cuda.memory_allocated(i) / torch.cuda.get_device_properties(i).total_memory * 100, 2)
+                } for i in range(torch.cuda.device_count())
+            ],
+            "cuda_version": torch.version.cuda,
+            "memory_settings": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "Ayarlanmamış")
+        }
         
         # Yanıt hazırla
         response = {
@@ -571,7 +598,8 @@ def system_info():
                 "total_memory_used_gb": round(total_memory_used, 2),
                 "total_memory_available_gb": round(total_memory_available, 2),
                 "overall_utilization_percent": round((total_memory_used / total_memory_available) * 100, 2) if total_memory_available > 0 else 0
-            }
+            },
+            "memory_statistics": memory_stats
         }
         
         # vLLM konfigürasyonunu ekle (eğer varsa)

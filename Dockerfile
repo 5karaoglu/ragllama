@@ -95,7 +95,7 @@ RUN nvidia-smi -L || echo "NVIDIA driver not found - will use CPU mode" && \
     echo "Checking NCCL installation:" && ls -la /usr/lib/x86_64-linux-gnu/libnccl* || echo "NCCL not found in standard location"
 
 # GPU bellek kullanımını sınırla
-ENV VLLM_GPU_MEMORY_UTILIZATION=0.75 \
+ENV VLLM_GPU_MEMORY_UTILIZATION=0.60 \
     VLLM_MAX_MODEL_LEN=4096 \
     VLLM_ENFORCE_EAGER=1 \
     VLLM_USE_PAGED_ATTENTION=true \
