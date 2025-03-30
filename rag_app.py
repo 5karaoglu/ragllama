@@ -243,29 +243,24 @@ def setup_llm():
             
             try:
                 # vLLM entegrasyonunu LlamaIndex üzerinden yükleyelim
-                from llama_index.llms.vllm import VLLMLangChainCompatibility
+                from llama_index.llms.vllm import Vllm
 
-                # vLLM'i yapılandır - PagedAttention özelliğinden faydalanır
-                from vllm import LLM as VLLM
-                vllm_model = VLLM(
+                # vLLM ile model yükle - doğrudan Vllm sınıfını kullan
+                llm = Vllm(
                     model=model_name,
                     tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
                     dtype="float16" if device == "cuda" else "float32",
                     trust_remote_code=True,
                     max_model_len=8192,  # Maksimum bağlam penceresi
-                    download_dir=cache_dir,
-                    gpu_memory_utilization=0.85,  # GPU belleği kullanım oranı
-                    enforce_eager=False,  # Daha yüksek verimlilik için eager modu kapatın
-                    enable_lora=False,  # LoRA desteğini devre dışı bırak
-                )
-                
-                # LlamaIndex uyumlu wrapper oluştur
-                llm = VLLMLangChainCompatibility(
-                    client=vllm_model,
-                    max_new_tokens=1024,
                     temperature=0.7,
                     top_p=0.95,
-                    streaming=False
+                    max_new_tokens=1024,  # Daha uzun yanıtlar için
+                    vllm_kwargs={
+                        "gpu_memory_utilization": 0.85,  # GPU belleği kullanım oranı
+                        "enforce_eager": False,  # Daha yüksek verimlilik için eager modu kapatın
+                        "enable_lora": False,  # LoRA desteğini devre dışı bırak
+                        "download_dir": cache_dir
+                    }
                 )
                 
                 logger.info("vLLM ile model başarıyla yüklendi!")
