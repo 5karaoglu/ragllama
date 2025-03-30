@@ -30,10 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # CUDA ve vLLM için ortam değişkenlerini ayarla
 ENV CUDA_DEVICE_MAX_CONNECTIONS=1 \
     NCCL_DEBUG=INFO \
-    NCCL_SOCKET_IFNAME=^lo,docker \
+    NCCL_SOCKET_IFNAME=lo \
     NCCL_IB_DISABLE=1 \
-    NCCL_P2P_DISABLE=0 \
-    NCCL_CROSS_NIC=1 \
+    NCCL_P2P_LEVEL=NVL \
     NCCL_ASYNC_ERROR_HANDLING=1 \
     TORCH_CUDA_ARCH_LIST="8.6" \
     CUDA_HOME=/usr/local/cuda \
@@ -120,6 +119,10 @@ ENV VLLM_GPU_MEMORY_UTILIZATION=0.60 \
 
 # Docker build tamamlandıktan sonra etkileşimli modu tekrar etkinleştir
 ENV DEBIAN_FRONTEND=dialog
+
+# Quanto paket sürümünü kontrol et
+RUN python -c "import quanto; print(f'Kurulu Quanto sürümü: {quanto.__version__}')" && \
+    python -c "import torch; print(f'Kurulu PyTorch sürümü: {torch.__version__}')"
 
 # Port yapılandırması ve girdi noktası
 EXPOSE 5000

@@ -219,6 +219,12 @@ def setup_llm():
                 # vLLM ile modeli yükle
                 from vllm import LLM
                 
+                # GitHub issue #1116'daki çözüm - Ray'i başlatmadan önce GPU sayısını doğru ayarla
+                import ray
+                ray.shutdown()
+                logger.info(f"Ray GPU tespiti sorunu için önlem uygulanıyor: {torch.cuda.device_count()} GPU kullanılabilir")
+                ray.init(num_gpus=torch.cuda.device_count())
+                
                 # vLLM konfigürasyon parametreleri
                 vllm_engine_args = {
                     "model": model_name,

@@ -16,8 +16,8 @@ services:
       - embedding_cache:/app/embedding_cache
       - storage:/app/storage
       - pdf_storage:/app/pdf_storage
-    # Shared memory boyutunu artır (RTX 4090 için yeterli olacak)
-    shm_size: 16G
+    # Shared memory boyutunu artır (RTX 4090 için yeterli olacak ve Ray için gerekli)
+    shm_size: 20G
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=0,1  # İki GPU'yu da görünür yap
@@ -37,15 +37,15 @@ services:
       - KV_CACHE_RESIDUAL_LENGTH=128  # Genelde optimal değer
       - OMP_NUM_THREADS=8  # CPU iş parçacığı sayısını sınırla
       - TOKENIZERS_PARALLELISM=true  # Tokenizer paralelliğini etkinleştir
-      # Ray için bellek limiti ve yapılandırması
-      - RAY_memory_monitor_refresh_ms=0  # Bellek izlemeyi devre dışı bırak
-      - RAY_object_store_memory=20000000000  # ~20GB - Ray için nesne deposu boyutu
+      # Ray için temel ayarlar (basitleştirilmiş)
+      - RAY_DEDUP_LOGS=0  # Ray log tekrarlarını engelle
       # GPU önbelleğini temizle
       - CUDA_CACHE_DISABLE=0  # CUDA önbelleğini etkinleştir
       # vLLM disk önbelleğini etkinleştir
       - VLLM_ENABLE_DISK_CACHE=true
       # Flash Attention 2 etkinleştir
       - USE_FLASH_ATTENTION=true
+      - NCCL_SOCKET_IFNAME=lo  # NCCL soketlerini loopback ile sınırla
     restart: unless-stopped
     runtime: nvidia  # NVIDIA runtime'ı açıkça belirt
     # GPU desteği ve kaynak sınırlamaları
@@ -56,7 +56,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0', '1']  # İlk iki GPU'yu kullan (indeks 0 ve 1)
+              device_ids: ['0', '1']  # İki GPU'yu da kullan (indeks 0 ve 1)
               capabilities: [gpu, utility, compute]  # Tüm GPU yeteneklerini etkinleştir
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
@@ -64,9 +64,6 @@ services:
       timeout: 20s  # Zaman aşımını artır
       retries: 3
       start_period: 300s  # Başlangıç süresini artır (büyük model yükleme süresi için)
-    # Ray ve vLLM için ek tmpfs bağlaması
-    tmpfs:
-      - /dev/shm
 
 volumes:
   model_cache:
