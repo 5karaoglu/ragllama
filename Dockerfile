@@ -11,13 +11,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
-# NCCL kurulumu için doğrudan Ubuntu deposunu kullan
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    libnccl2 \
-    libnccl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # CUDA bellek yönetimi için çevre değişkenleri
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
 # İki GPU'yu da kullan
@@ -25,7 +18,7 @@ ENV CUDA_VISIBLE_DEVICES=0,1
 # CUDA ortam değişkenleri
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}:/usr/local/lib
 
 # vLLM yapılandırması
 ENV VLLM_USE_PAGED_ATTENTION=true
