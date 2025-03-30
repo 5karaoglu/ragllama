@@ -254,12 +254,12 @@ def setup_llm():
                     tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
                     dtype="float16" if device == "cuda" else "float32",
                     trust_remote_code=True,
+                    download_dir=cache_dir,  # İndirme dizinini doğrudan ana parametre olarak veriyoruz
                     # vLLM'in diğer parametrelerini vllm_kwargs olarak geçirelim
                     vllm_kwargs={
                         "gpu_memory_utilization": 0.85,  # GPU belleği kullanım oranı
                         "enforce_eager": False,  # Daha yüksek verimlilik için eager modu kapatın
-                        "enable_lora": False,  # LoRA desteğini devre dışı bırak
-                        "download_dir": cache_dir
+                        "enable_lora": False  # LoRA desteğini devre dışı bırak
                     }
                 )
                 
