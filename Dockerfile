@@ -60,7 +60,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pynccl \
     psutil \
     Flask==2.3.3 \
-    pypdf \
     PyPDF2 \
     pandas==2.1.1 \
     langchain==0.0.312 \
