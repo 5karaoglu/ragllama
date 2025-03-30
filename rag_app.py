@@ -201,10 +201,17 @@ def setup_llm():
             
             # vLLM desteği için CUDA ortam değişkenini ayarla
             if not os.environ.get("CUDA_VISIBLE_DEVICES"):
-                if torch.cuda.device_count() > 0:
-                    # Mevcut GPU'yu kullan
-                    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-                    logger.info("CUDA_VISIBLE_DEVICES=0 olarak ayarlandı")
+                # NVIDIA_VISIBLE_DEVICES değişkenini kontrol et (Docker ile kullanıldığında)
+                nvidia_devices = os.environ.get("NVIDIA_VISIBLE_DEVICES", "")
+                if nvidia_devices:
+                    # NVIDIA_VISIBLE_DEVICES değerini CUDA_VISIBLE_DEVICES'a aktar
+                    os.environ["CUDA_VISIBLE_DEVICES"] = nvidia_devices
+                    logger.info(f"CUDA_VISIBLE_DEVICES={nvidia_devices} olarak NVIDIA_VISIBLE_DEVICES'tan ayarlandı")
+                elif torch.cuda.device_count() > 0:
+                    # Eğer NVIDIA_VISIBLE_DEVICES yoksa ve CUDA GPU'ları varsa, tüm GPU'ları kullan
+                    devices = ",".join([str(i) for i in range(torch.cuda.device_count())])
+                    os.environ["CUDA_VISIBLE_DEVICES"] = devices
+                    logger.info(f"CUDA_VISIBLE_DEVICES={devices} olarak otomatik ayarlandı")
         else:
             device = "cpu"
             logger.warning("CUDA kullanılamıyor, CPU kullanılacak!")
@@ -222,8 +229,17 @@ def setup_llm():
                 # GitHub issue #1116'daki çözüm - Ray'i başlatmadan önce GPU sayısını doğru ayarla
                 import ray
                 ray.shutdown()
-                logger.info(f"Ray GPU tespiti sorunu için önlem uygulanıyor: {torch.cuda.device_count()} GPU kullanılabilir")
-                ray.init(num_gpus=torch.cuda.device_count())
+                
+                # CUDA_VISIBLE_DEVICES'dan görünür GPU sayısını belirle
+                visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+                if visible_devices:
+                    num_visible_gpus = len(visible_devices.split(","))
+                else:
+                    num_visible_gpus = torch.cuda.device_count()
+                
+                logger.info(f"Ray GPU tespiti sorunu için önlem uygulanıyor: {num_visible_gpus} GPU kullanılabilir")
+                # Doğru GPU sayısını ray.init'e aktar
+                ray.init(num_gpus=num_visible_gpus)
                 
                 # vLLM konfigürasyon parametreleri
                 vllm_engine_args = {
