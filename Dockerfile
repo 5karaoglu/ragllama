@@ -54,6 +54,8 @@ RUN mkdir -p /tmp/ray && \
 # VLLM ve diğer bağımlılıkları yükle
 RUN pip install --no-cache-dir --upgrade pip && \
     pip config set global.timeout 300 && \
+    # Flash-Attention NVCC olmadan yükle, çünkü runtime imajında CUDA derleyicisi yok
+    SKIP_CUDA_BUILD=1 \
     pip install --no-cache-dir --default-timeout=300 \
     vllm==0.3.0 \
     ray==2.9.0 \
@@ -69,7 +71,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     # 4-bit ve KV cache quantization bağımlılıkları
     bitsandbytes==0.41.3 \
     accelerate \
-    flash-attn==2.4.2 \
+    # Flash-Attention'ı CUDA derleme adımını atlayarak yükle (--no-build-isolation parametresi gerekli)
+    flash-attn==2.4.2 --no-build-isolation \
     quanto==0.1.0 \
     hqq \
     # Transformers ve LlamaIndex ekosistemi
