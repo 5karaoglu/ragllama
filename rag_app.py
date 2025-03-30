@@ -6,13 +6,17 @@ import json
 import logging
 import colorlog
 import torch
+import re
+import sqlite3
+import PyPDF2
+import types
+import gc
+import shutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from flask import Flask, request, jsonify
-import PyPDF2
-import re
-import sqlite3
 
+# LlamaIndex importları
 from llama_index.core import (
     Settings,
     StorageContext,
@@ -23,10 +27,18 @@ from llama_index.core import (
 from llama_index.core.indices.loading import load_index_from_storage
 from llama_index.core.query_engine import JSONalyzeQueryEngine, RetrieverQueryEngine
 from llama_index.core.tools.query_engine import QueryEngineTool
-from llama_index.llms.huggingface import HuggingFaceLLM
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler, CBEventType
+
+# Model importları
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from llama_index.llms.huggingface import HuggingFaceLLM
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.llms.vllm import Vllm
+from sentence_transformers import SentenceTransformer
+
+# Uygulama modülleri
+from app.utils.prompts import SYSTEM_PROMPT
 
 # Flask uygulaması
 app = Flask(__name__)
@@ -35,45 +47,6 @@ app = Flask(__name__)
 db_query_engine = None
 pdf_query_engine = None
 llama_debug_handler = None
-
-# Sistem promptları
-SYSTEM_PROMPT = """
-Bu bir RAG (Retrieval-Augmented Generation) sistemidir. Lütfen aşağıdaki kurallara uygun yanıtlar verin:
-
-1. Her zaman Türkçe yanıt verin.
-2. Yalnızca verilen belgelerden elde edilen bilgilere dayanarak yanıt verin.
-3. Eğer yanıt verilen belgelerde bulunmuyorsa, "Bu konuda belgelerde yeterli bilgi bulamadım" deyin.
-4. Kişisel görüş veya yorum eklemeyin.
-5. Verilen konunun dışına çıkmayın.
-6. Yanıtlarınızı kapsamlı, detaylı ve anlaşılır tutun.
-7. Emin olmadığınız bilgileri paylaşmayın.
-8. Belgelerdeki bilgileri çarpıtmadan, doğru şekilde aktarın.
-9. Yanıtlarınızı yapılandırırken, önemli bilgileri vurgulayın ve gerektiğinde maddeler halinde sunun.
-10. Teknik terimleri açıklayın ve gerektiğinde örnekler verin.
-
-ÖNEMLİ - SQL SORGULARI İÇİN KRİTİK KURALLAR:
-1. SQLite sözdizimi kurallarına kesinlikle uyun.
-2. SQL sorgularınızda HİÇBİR ŞEKİLDE '#' karakterini KULLANMAYIN! 
-3. SQL sorgularınıza KESİNLİKLE yorum satırı EKLEMEYİN!
-4. Gerekiyorsa yorum SADECE '--' (iki tire) ile başlamalıdır.
-5. Örnek: SELECT * FROM users WHERE id = 1; -- bu şekilde.
-6. SQL sorgularını mümkün olduğunca basit tutun.
-7. SQL sorgularını tek bir ifade olarak yazın.
-8. SQL sorgusunu doğrudan çalıştırılabilir formatta döndürün - açıklama olmadan.
-9. SQL sorgusu gönderilirken ASLA açıklama yazmayın - sadece SQL kodunu gönderin.
-10. DİKKAT: 'selecting the specific column' gibi doğal dil ifadeleri değil, 'SELECT column_name FROM table' gibi SQL kodları yazın!
-11. SQL sorgusu oluşturma düşünce sürecinizi dökümanlara yansıtmayın, SADECE nihai SQL kodunu yazın.
-12. Düşünme sürecinizi tamamlayın ve SADECE çalıştırmaya hazır SQL kodunu döndürün.
-13. Eğer sorgu oluşturmakta zorlanırsanız, verilere doğrudan bakıp analiz yapın.
-
-ÖRNEKLER:
-DOĞRU: SELECT * FROM users WHERE name = 'Ali';
-YANLIŞ: selecting the specific column which is name = 'Ali'
-YANLIŞ: SELECT * FROM users WHERE name = 'Ali'; # Bu Ali'yi bulan sorgu
-YANLIŞ: İşte Ali'yi bulmak için bir sorgu yazıyorum: SELECT * FROM users WHERE name = 'Ali';
-
-Göreviniz, kullanıcının sorularını belgelerden elde ettiğiniz bilgilerle detaylı ve doğru bir şekilde yanıtlamaktır.
-"""
 
 # Özel SQL filtre fonksiyonu
 def filter_llm_response_for_sql(llm_response: str) -> str:
@@ -216,7 +189,6 @@ def setup_llm():
             
             # CUDA önbelleğini temizle
             torch.cuda.empty_cache()
-            import gc
             gc.collect()
             
             # CUDA ortam değişkenlerini kontrol et
@@ -242,9 +214,6 @@ def setup_llm():
             logger.info("vLLM kullanılarak model yükleniyor...")
             
             try:
-                # vLLM entegrasyonunu LlamaIndex üzerinden yükleyelim
-                from llama_index.llms.vllm import Vllm
-
                 # vLLM ile model yükle - doğrudan Vllm sınıfını kullan
                 llm = Vllm(
                     model=model_name,  # doğru parametre: model
@@ -283,9 +252,6 @@ def setup_llm():
         # Klasik HuggingFace modelini yükle (vLLM başarısız olursa veya istenmezse)
         logger.info("Klasik HuggingFace modeli yükleniyor...")
         
-        # Önce model ve tokenizer'ı manuel olarak yükleyelim
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
@@ -315,7 +281,6 @@ def setup_llm():
         logger.info(f"Model cihazı: {next(model.parameters()).device}")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
-        from llama_index.llms.huggingface import HuggingFaceLLM
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
@@ -347,7 +312,6 @@ def setup_llm():
             device_map="auto" if device == "cuda" else None
         )
         
-        from llama_index.llms.huggingface import HuggingFaceLLM
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
@@ -368,9 +332,6 @@ def setup_embedding_model():
         
         # Cache dizinini oluştur
         os.makedirs(cache_dir, exist_ok=True)
-        
-        # Sentence-transformers kullanarak modeli yükle
-        from sentence_transformers import SentenceTransformer
         
         # Önce SentenceTransformer ile modeli yükle
         st_model = SentenceTransformer(model_name, cache_folder=cache_dir)
@@ -665,9 +626,6 @@ def query():
             logger.info(f"DB modülü ile soru işleniyor: {user_query}")
             
             # LLM sorgu takibini etkinleştir
-            from llama_index.core.callbacks import CallbackManager
-            import types
-            
             # JSONalyzeQueryEngine sorgularını gözlemleme
             original_query = db_query_engine.query
             
@@ -795,7 +753,6 @@ def initialize_app():
     else:
         logger.warning("Embedding modeli bulunamadı, varsayılan model kullanılacak.")
         # Varsayılan olarak local embedding modeli kullan
-        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
         Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
         logger.info("Varsayılan embedding modeli (all-MiniLM-L6-v2) global ayarlara atandı.")
     
@@ -807,7 +764,6 @@ def initialize_app():
         # Önce storage dizinini temizle (isteğe bağlı)
         storage_dir = "./storage"
         if os.path.exists(storage_dir):
-            import shutil
             try:
                 logger.info(f"Eski storage dizini temizleniyor: {storage_dir}")
                 shutil.rmtree(storage_dir)
