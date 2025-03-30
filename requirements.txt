@@ -23,7 +23,7 @@ protobuf==4.24.4
 peft==0.6.2
 vllm==0.3.2
 # KV Cache quantization için gerekli paketler
-quanto==0.1.0  # En güncel sürüm için 0.1.0 öneriliyor
+quanto==0.0.9  # torch 2.1.2 ile uyumlu olan sürüm
 hqq  # KV Cache niceleme için alternatif backend
 # Aşağıdaki paketler GPU hızlandırma için opsiyonel
 # Kurulum hatası alınırsa yorum satırına alınabilir

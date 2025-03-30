@@ -69,7 +69,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     # 4-bit ve KV cache quantization bağımlılıkları
     bitsandbytes==0.41.3 \
     accelerate \
-    quanto==0.1.0 \
+    quanto==0.0.9 \
     hqq \
     # Transformers ve LlamaIndex ekosistemi
     transformers==4.38.0 \
