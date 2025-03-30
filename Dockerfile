@@ -11,19 +11,12 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
-# NVIDIA paket deposunu tespit et ve NCCL için ekle
-RUN . /etc/os-release && \
-    OS_VER=${ID}${VERSION_ID/./} && \
-    ARCH=$(uname -m) && \
-    echo "Tespit edilen sistem: ${OS_VER}, Mimari: ${ARCH}" && \
-    wget -qO - https://developer.download.nvidia.com/compute/cuda/repos/${OS_VER}/${ARCH}/3bf863cc.pub | apt-key add - && \
-    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/${OS_VER}/${ARCH} /" > /etc/apt/sources.list.d/cuda.list && \
-    apt-get update && \
-    apt-get install -y libnccl2 libnccl-dev || { \
-        echo "NCCL kurulumu Ubuntu deposundan deneniyor..."; \
-        apt-get install -y libnccl2 libnccl-dev --no-install-recommends; \
-    } && \
-    rm -rf /var/lib/apt/lists/*
+# NCCL kurulumu için doğrudan Ubuntu deposunu kullan
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libnccl2 \
+    libnccl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # CUDA bellek yönetimi için çevre değişkenleri
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
