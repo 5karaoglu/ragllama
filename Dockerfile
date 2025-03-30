@@ -1,5 +1,9 @@
 FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
+# Etkileşimsiz yapılandırma ve timezone ayarları
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Europe/Istanbul
+
 # NVIDIA apt repo ekle
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -8,6 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-key del 7fa2af80 || true \
     && curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | apt-key add - \
     && echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64 /" > /etc/apt/sources.list.d/nvidia-cuda.list
+
+# Timezone paketini önceden yükle ve yapılandır
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Sistem bağımlılıklarını yükle
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -88,6 +95,9 @@ ENV VLLM_GPU_MEMORY_UTILIZATION=0.75 \
     VLLM_ENFORCE_EAGER=1 \
     VLLM_USE_PAGED_ATTENTION=true \
     VLLM_ENABLE_DISK_CACHE=true
+
+# Docker build tamamlandıktan sonra etkileşimli modu tekrar etkinleştir
+ENV DEBIAN_FRONTEND=dialog
 
 # Port yapılandırması ve girdi noktası
 EXPOSE 5000
