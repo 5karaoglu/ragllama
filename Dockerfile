@@ -9,9 +9,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
     wget \
     nvidia-cuda-toolkit \
-    libcublas-dev \
-    libcurand-dev \
-    libcusparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # CUDA bellek yönetimi için çevre değişkenleri
