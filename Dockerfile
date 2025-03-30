@@ -67,8 +67,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     faiss-gpu==1.7.2 \
     llama-index-vector-stores-faiss==0.1.2 \
     llama-index-llms-openai==0.1.4 \
-    llama-index-llms-huggingface==0.1.2 \
-    llama-index-embeddings-huggingface==0.1.2 \
+    llama-index-llms-huggingface==0.1.4 \
+    llama-index-embeddings-huggingface==0.1.3 \
     llama-index-readers-file==0.1.4 \
     && python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}')" \
     && python -c "from vllm import LLM; print('vLLM imported successfully')"
