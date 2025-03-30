@@ -30,5 +30,5 @@ hqq  # KV Cache niceleme için alternatif backend
 # xformers==0.0.22.post7
 # triton==2.1.0
 # Flash Attention KV Cache quantization ile uyumludur
-# Kurulum için: SKIP_CUDA_BUILD=1 pip install flash-attn==2.4.2 --no-build-isolation
+# Kurulum için: FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE pip install flash-attn==2.4.2 --no-build-isolation
 flash-attn==2.4.2 
