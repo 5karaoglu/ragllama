@@ -60,18 +60,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pynccl \
     psutil \
     Flask==2.3.3 \
-    llama-index==0.9.45 \
+    llama-index==0.9.7 \
     pypdf \
     PyPDF2 \
     pandas==2.1.1 \
     langchain==0.0.312 \
     sentence_transformers==2.2.2 \
     faiss-gpu==1.7.2 \
-    llama-index-vector-stores-faiss==0.1.2 \
-    llama-index-llms-openai==0.1.4 \
-    llama-index-llms-huggingface==0.1.4 \
-    llama-index-embeddings-huggingface==0.1.3 \
-    llama-index-readers-file==0.1.4 \
     colorlog \
     transformers \
     accelerate \
