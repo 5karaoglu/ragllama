@@ -38,7 +38,7 @@ from llama_index.llms.vllm import Vllm
 from sentence_transformers import SentenceTransformer
 
 # Uygulama modülleri
-from app.utils.prompts import SYSTEM_PROMPT
+from prompts import SYSTEM_PROMPT
 
 # Flask uygulaması
 app = Flask(__name__)
