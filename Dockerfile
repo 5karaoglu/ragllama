@@ -59,7 +59,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pynccl \
     psutil \
     Flask==2.3.3 \
-    llama-index==0.9.16 \
+    llama-index==0.9.45 \
     pypdf \
     PyPDF2 \
     pandas==2.1.1 \
