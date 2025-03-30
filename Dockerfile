@@ -55,7 +55,7 @@ RUN mkdir -p /tmp/ray && \
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
     vllm==0.3.0 \
-    ray==2.9.3 \
+    ray==2.9.0 \
     pynccl \
     psutil \
     Flask==2.3.3 \
