@@ -31,7 +31,7 @@ from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler, CBEventType
 
 # Model importları
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.vllm import Vllm
@@ -199,60 +199,61 @@ def setup_llm():
             torch.cuda.synchronize()  # Tüm CUDA işlemlerinin tamamlanmasını bekle
             gc.collect()
             
-            # Temizlik sonrası bellek durumunu kontrol et
-            for i in range(torch.cuda.device_count()):
-                allocated_after = torch.cuda.memory_allocated(i) / 1024**3
-                free_after = (torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i)) / 1024**3
-                logger.info(f"Temizlik sonrası GPU {i}: Kullanılmış {allocated_after:.2f} GB, Boş {free_after:.2f} GB")
-            
-            # CUDA ortam değişkenlerini kontrol et
-            logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Ayarlanmamış')}")
-            logger.info(f"CUDA_HOME: {os.environ.get('CUDA_HOME', 'Ayarlanmamış')}")
-            logger.info(f"PYTORCH_CUDA_ALLOC_CONF: {os.environ.get('PYTORCH_CUDA_ALLOC_CONF', 'Ayarlanmamış')}")
+            # vLLM desteği için CUDA ortam değişkenini ayarla
+            if not os.environ.get("CUDA_VISIBLE_DEVICES"):
+                if torch.cuda.device_count() > 0:
+                    # Mevcut GPU'yu kullan
+                    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+                    logger.info("CUDA_VISIBLE_DEVICES=0 olarak ayarlandı")
         else:
-            logger.warning("CUDA kullanılamıyor! CPU kullanılacak.")
-            logger.warning("NVIDIA sürücülerini ve CUDA kurulumunu kontrol edin.")
-    except Exception as e:
-        logger.error(f"GPU kontrolü sırasında hata oluştu: {str(e)}")
-        logger.warning("CPU kullanılacak.")
-    
-    logger.info(f"Cihaz: {device}")
-    
-    # vLLM kullanarak daha hızlı ve bellek verimli çıkarım yapmayı deneyelim
-    try:
-        logger.info("vLLM ile model yükleme deneniyor...")
+            device = "cpu"
+            logger.warning("CUDA kullanılamıyor, CPU kullanılacak!")
         
         # LLM tipi için çevre değişkenini kontrol et
         llm_type = os.environ.get("LLM_TYPE", "vllm").lower()
         
+        # Model vLLM aracılığıyla yükle (daha hızlı çıkarım için)
         if llm_type == "vllm" and device == "cuda":
-            logger.info("vLLM kullanılarak model yükleniyor...")
-            
             try:
-                # vLLM ile model yükle - doğrudan Vllm sınıfını kullan
+                logger.info("vLLM modeli yükleniyor...")
+                # vLLM ile modeli yükle
+                from vllm import LLM
+                
+                # vLLM konfigürasyon parametreleri
+                vllm_engine_args = {
+                    "model": model_name,
+                    "trust_remote_code": True,
+                    "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
+                    "dtype": "half",  # float16 kullan
+                    "download_dir": cache_dir,
+                    "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.75")),
+                    "max_model_len": 8192,  # Maksimum bağlam uzunluğu
+                }
+                
+                if os.environ.get("VLLM_USE_PAGED_ATTENTION", "").lower() == "true":
+                    logger.info("vLLM PagedAttention etkinleştiriliyor...")
+                    vllm_engine_args["enforce_eager"] = False
+                else:
+                    logger.info("vLLM PagedAttention devre dışı")
+                
+                # vLLM engine'i oluştur
+                vllm_engine = LLM(**vllm_engine_args)
+                
+                # vLLM ile LlamaIndex LLM arayüzünü oluştur
                 llm = Vllm(
-                    model=model_name,  # doğru parametre: model
+                    model=vllm_engine,
+                    max_new_tokens=1024,
                     temperature=0.7,
-                    max_new_tokens=1024,  # Maksimum yeni token sayısı
+                    presence_penalty=0.0,
+                    frequency_penalty=0.0,
                     top_p=0.95,
-                    tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
-                    dtype="float16" if device == "cuda" else "float32",
-                    trust_remote_code=True,
-                    download_dir=cache_dir,  # İndirme dizinini doğrudan ana parametre olarak veriyoruz
-                    # vLLM'in diğer parametrelerini vllm_kwargs olarak geçirelim
-                    vllm_kwargs={
-                        "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.60")),  # GPU belleği kullanım oranını azalt
-                        "enforce_eager": os.environ.get("VLLM_ENFORCE_EAGER", "true").lower() == "true",  # Eager modu için çevre değişkenini kullan
-                        "enable_lora": False  # LoRA desteğini devre dışı bırak
-                    }
+                    top_k=50,
+                    callback_manager=CallbackManager([llama_debug_handler]) if llama_debug_handler else None
                 )
                 
-                logger.info("vLLM ile model başarıyla yüklendi!")
+                logger.info("vLLM modeli başarıyla yüklendi")
                 return llm
                 
-            except ImportError as ie:
-                logger.error(f"vLLM yüklenirken ImportError: {str(ie)}")
-                logger.warning("vLLM yüklenemedi, klasik HuggingFace modeline geçiliyor...")
             except Exception as ve:
                 logger.error(f"vLLM model yükleme hatası: {str(ve)}")
                 logger.warning("vLLM hatası nedeniyle klasik HuggingFace modeline geçiliyor...")
@@ -265,7 +266,7 @@ def setup_llm():
                 logger.info("CUDA kullanılamadığı için vLLM atlanıyor, HuggingFace kullanılıyor...")
                 
         # Klasik HuggingFace modelini yükle (vLLM başarısız olursa veya istenmezse)
-        logger.info("Klasik HuggingFace modeli yükleniyor...")
+        logger.info("Klasik HuggingFace modeli 4-bit NF4 formatında yükleniyor...")
         
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
@@ -273,27 +274,37 @@ def setup_llm():
             cache_dir=cache_dir
         )
         
-        # Model'i yükle
+        # 4-bit NF4 quantization konfigürasyonu
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,  # 4-bit niceleme etkinleştir
+            bnb_4bit_quant_type="nf4",  # NF4 formatı (normal dağılıma uygun)
+            bnb_4bit_compute_dtype=torch.float16,  # Hesaplama data tipi
+            bnb_4bit_use_double_quant=True,  # Ek bellek tasarrufu için nested quantization
+        )
+        
+        # Model'i 4-bit olarak yükle
         model_kwargs = {
-            "torch_dtype": torch.float16 if device == "cuda" else torch.float32,
+            "quantization_config": bnb_config,
             "low_cpu_mem_usage": True,
-            "cache_dir": cache_dir
+            "cache_dir": cache_dir,
+            "device_map": "auto" if device == "cuda" else None
         }
         
-        # device_map'i sadece burada kullan
-        if device == "cuda":
-            model_kwargs["device_map"] = "auto"
-            logger.info("GPU kullanılacak: device_map=auto")
-        else:
-            logger.warning("GPU kullanılamıyor, CPU kullanılacak!")
+        logger.info("4-bit NF4 formatında model yükleniyor: Bellek kullanımı 4x azalacak.")
         
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             **model_kwargs
         )
         
-        logger.info("HuggingFace modeli başarıyla yüklendi")
+        logger.info("HuggingFace modeli 4-bit NF4 formatında başarıyla yüklendi")
         logger.info(f"Model cihazı: {next(model.parameters()).device}")
+        
+        # Bellek kullanım bilgilerini logla
+        if device == "cuda":
+            for i in range(torch.cuda.device_count()):
+                allocated_mem = torch.cuda.memory_allocated(i) / 1024**3
+                logger.info(f"4-bit model bellek kullanımı (GPU {i}): {allocated_mem:.2f} GB")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
         llm = HuggingFaceLLM(
@@ -301,9 +312,25 @@ def setup_llm():
             tokenizer=tokenizer,
             model_context_length=8192,  # Modelin maksimum bağlam penceresi uzunluğu
             max_new_tokens=1024,  # Üretilecek maksimum yeni token sayısı
-            generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
+            generate_kwargs={
+                "temperature": 0.7, 
+                "do_sample": True, 
+                "top_p": 0.95,
+                # KV cache niceleme etkinleştir (4-bit modele ek olarak)
+                "cache_implementation": "quantized",
+                "cache_config": {
+                    "backend": os.environ.get("KV_CACHE_BACKEND", "quanto"),  # quanto veya HQQ
+                    "nbits": int(os.environ.get("KV_CACHE_NBITS", "4")),  # 4-bit KV cache
+                    "q_group_size": 128,  # Grup boyutu (daha düşük = daha doğru, daha yüksek = daha az bellek)
+                    "residual_length": int(os.environ.get("KV_CACHE_RESIDUAL_LENGTH", "128")),  # Residual uzunluğu
+                    "axis-key": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,  # quanto için 0, HQQ için 1
+                    "axis-value": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,  # quanto için 0, HQQ için 1
+                }
+            }
         )
         
+        logger.info("4-bit NF4 model ve 4-bit KV Cache niceleme başarıyla etkinleştirildi.")
+        logger.info(f"KV Cache backend: {os.environ.get('KV_CACHE_BACKEND', 'quanto')}, KV Cache nbits: {os.environ.get('KV_CACHE_NBITS', '4')}")
         return llm
         
     except Exception as e:
@@ -314,27 +341,71 @@ def setup_llm():
         fallback_model = "deepseek-ai/deepseek-llm-7b-chat"
         logger.info(f"Yedek model yükleniyor: {fallback_model}")
         
-        tokenizer = AutoTokenizer.from_pretrained(
-            fallback_model,
-            cache_dir=cache_dir
-        )
-        
-        model = AutoModelForCausalLM.from_pretrained(
-            fallback_model,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            low_cpu_mem_usage=True,
-            cache_dir=cache_dir,
-            device_map="auto" if device == "cuda" else None
-        )
+        try:
+            # 4-bit NF4 quantization konfigürasyonu (yedek model için)
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            
+            tokenizer = AutoTokenizer.from_pretrained(
+                fallback_model,
+                cache_dir=cache_dir
+            )
+            
+            model = AutoModelForCausalLM.from_pretrained(
+                fallback_model,
+                quantization_config=bnb_config,
+                low_cpu_mem_usage=True,
+                cache_dir=cache_dir,
+                device_map="auto" if device == "cuda" else None
+            )
+            
+            logger.info("Yedek model 4-bit NF4 formatında başarıyla yüklendi")
+            
+        except Exception as fallback_error:
+            logger.error(f"4-bit yedek model yüklenirken hata: {str(fallback_error)}")
+            logger.warning("Standard float16 formatında yedek model deneniyor...")
+            
+            # 4-bit yükleme başarısız olursa, normal float16 yüklemeyi dene
+            tokenizer = AutoTokenizer.from_pretrained(
+                fallback_model,
+                cache_dir=cache_dir
+            )
+            
+            model = AutoModelForCausalLM.from_pretrained(
+                fallback_model,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                low_cpu_mem_usage=True,
+                cache_dir=cache_dir,
+                device_map="auto" if device == "cuda" else None
+            )
         
         llm = HuggingFaceLLM(
             model=model,
             tokenizer=tokenizer,
             model_context_length=8192,  # Modelin maksimum bağlam penceresi uzunluğu
             max_new_tokens=1024,  # Üretilecek maksimum yeni token sayısı
-            generate_kwargs={"temperature": 0.7, "do_sample": True, "top_p": 0.95}
+            generate_kwargs={
+                "temperature": 0.7, 
+                "do_sample": True, 
+                "top_p": 0.95,
+                # KV cache niceleme etkinleştir (yedek model için)
+                "cache_implementation": "quantized",
+                "cache_config": {
+                    "backend": os.environ.get("KV_CACHE_BACKEND", "quanto"),  # quanto veya HQQ
+                    "nbits": int(os.environ.get("KV_CACHE_NBITS", "4")),  # 4-bit KV cache
+                    "q_group_size": 128,  # Grup boyutu
+                    "residual_length": int(os.environ.get("KV_CACHE_RESIDUAL_LENGTH", "128")),  # Residual uzunluğu
+                    "axis-key": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,
+                    "axis-value": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,
+                }
+            }
         )
         
+        logger.info("Yedek model 4-bit formatında ve KV Cache nicelemesi ile yüklendi.")
         return llm
 
 def setup_embedding_model():

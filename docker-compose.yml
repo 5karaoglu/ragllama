@@ -30,6 +30,11 @@ services:
       - VLLM_MAX_PARALLEL_LOADING_WORKERS=2  # Model yükleme için paralel işçi sayısı
       - VLLM_GPU_MEMORY_UTILIZATION=0.60  # GPU bellek kullanım oranını azalt (0.75 -> 0.60)
       - VLLM_TENSOR_PARALLEL_SIZE=2  # 2 GPU üzerinde tensor paralelizmi
+      - BITSANDBYTES_NOWELCOME=1  # BitsAndBytes hoş geldin mesajını gizle
+      - HF_HUB_ENABLE_HF_TRANSFER=1  # Hub'dan daha hızlı model indirme
+      - KV_CACHE_BACKEND=quanto  # KV Cache için quanto backend kullan
+      - KV_CACHE_NBITS=4  # KV Cache için 4-bit quantization
+      - KV_CACHE_RESIDUAL_LENGTH=128  # Genelde optimal değer
       - OMP_NUM_THREADS=8  # CPU iş parçacığı sayısını sınırla
       - TOKENIZERS_PARALLELISM=true  # Tokenizer paralelliğini etkinleştir
       # Ray için bellek limiti ve yapılandırması
@@ -39,6 +44,8 @@ services:
       - CUDA_CACHE_DISABLE=0  # CUDA önbelleğini etkinleştir
       # vLLM disk önbelleğini etkinleştir
       - VLLM_ENABLE_DISK_CACHE=true
+      # Flash Attention 2 etkinleştir
+      - USE_FLASH_ATTENTION=true
     restart: unless-stopped
     runtime: nvidia  # NVIDIA runtime'ı açıkça belirt
     # GPU desteği ve kaynak sınırlamaları

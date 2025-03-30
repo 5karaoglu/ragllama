@@ -22,8 +22,11 @@ optimum==1.16.1
 protobuf==4.24.4
 peft==0.6.2
 vllm==0.3.2
+# KV Cache quantization için gerekli paketler
+quanto==0.1.0  # En güncel sürüm için 0.1.0 öneriliyor
+hqq  # KV Cache niceleme için alternatif backend
 # Aşağıdaki paketler GPU hızlandırma için opsiyonel
 # Kurulum hatası alınırsa yorum satırına alınabilir
 # xformers==0.0.22.post7
 # triton==2.1.0
-# flash-attn==2.4.2 
+flash-attn==2.4.2  # Flash Attention KV Cache quantization ile uyumludur 

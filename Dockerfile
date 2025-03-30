@@ -66,8 +66,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
     sentence_transformers==2.2.2 \
     faiss-gpu==1.7.2 \
     colorlog \
-    transformers \
+    # 4-bit ve KV cache quantization bağımlılıkları
+    bitsandbytes==0.41.3 \
     accelerate \
+    flash-attn==2.4.2 \
+    quanto==0.1.0 \
+    hqq \
+    # Transformers ve LlamaIndex ekosistemi
+    transformers==4.38.0 \
+    peft==0.6.2 \
     llama-index-core==0.10.12 \
     llama-index-legacy==0.9.48 \
     llama-index-llms-huggingface==0.1.4 \
@@ -76,7 +83,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     llama-index-readers-file==0.1.4 \
     llama-index-llms-vllm==0.1.3 \
     && python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}')" \
-    && python -c "from vllm import LLM; print('vLLM imported successfully')"
+    && python -c "from vllm import LLM; print('vLLM imported successfully')" \
+    && python -c "from transformers import BitsAndBytesConfig; print('BitsAndBytes imported successfully')"
 
 # Ray önbelleği için geçici dizini oluştur
 RUN mkdir -p /tmp/ray/session_files && \
@@ -94,12 +102,17 @@ RUN mkdir -p /app/model_cache /app/embedding_cache /app/storage /app/pdf_storage
 RUN nvidia-smi -L || echo "NVIDIA driver not found - will use CPU mode" && \
     echo "Checking NCCL installation:" && ls -la /usr/lib/x86_64-linux-gnu/libnccl* || echo "NCCL not found in standard location"
 
-# GPU bellek kullanımını sınırla
+# GPU bellek kullanımını sınırla ve KV cache niceleme ayarları
 ENV VLLM_GPU_MEMORY_UTILIZATION=0.60 \
     VLLM_MAX_MODEL_LEN=4096 \
     VLLM_ENFORCE_EAGER=1 \
     VLLM_USE_PAGED_ATTENTION=true \
-    VLLM_ENABLE_DISK_CACHE=true
+    VLLM_ENABLE_DISK_CACHE=true \
+    # 4-bit ve KV cache niceleme ayarları
+    HF_HUB_ENABLE_HF_TRANSFER=1 \
+    TRANSFORMERS_CACHE=/app/model_cache \
+    HF_HOME=/app/model_cache \
+    BITSANDBYTES_NOWELCOME=1
 
 # Docker build tamamlandıktan sonra etkileşimli modu tekrar etkinleştir
 ENV DEBIAN_FRONTEND=dialog
