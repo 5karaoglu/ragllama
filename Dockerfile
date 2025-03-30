@@ -1,70 +1,88 @@
 FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
-WORKDIR /app
-
 # Sistem bağımlılıklarını yükle
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential \
-    git \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
     wget \
-    nvidia-cuda-toolkit \
+    software-properties-common \
+    build-essential \
+    ca-certificates \
+    gnupg \
+    procps \
+    libnccl2 \
+    libnccl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# NVIDIA paket deposundan NCCL yükleme
-RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /etc/apt/keyrings && \
-    wget -qO- https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | gpg --dearmor -o /etc/apt/keyrings/cuda-archive-keyring.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/cuda-archive-keyring.gpg] https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /" | tee /etc/apt/sources.list.d/cuda-ubuntu2004-x86_64.list && \
-    apt-get update && \
-    apt-get install -y libnccl2 libnccl-dev && \
-    rm -rf /var/lib/apt/lists/*
+# CUDA ve vLLM için ortam değişkenlerini ayarla
+ENV CUDA_DEVICE_MAX_CONNECTIONS=1 \
+    NCCL_DEBUG=INFO \
+    NCCL_SOCKET_IFNAME=^lo,docker \
+    NCCL_IB_DISABLE=1 \
+    NCCL_P2P_DISABLE=0 \
+    NCCL_CROSS_NIC=1 \
+    NCCL_ASYNC_ERROR_HANDLING=1 \
+    TORCH_CUDA_ARCH_LIST="8.6" \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024 \
+    # Ray ve vLLM bellek ve performans ayarları
+    OMP_NUM_THREADS=8 \
+    TOKENIZERS_PARALLELISM=true \
+    RAY_DEDUP_LOGS=0 \
+    RAY_memory_monitor_refresh_ms=0
 
-# NCCL Kütüphanesini LD_LIBRARY_PATH'e ekle
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+# Ray için geçici klasörleri oluştur ve izinleri ayarla
+RUN mkdir -p /tmp/ray && \
+    chmod 777 /tmp/ray && \
+    mkdir -p /tmp/shm && \
+    chmod 777 /tmp/shm
 
-# CUDA bellek yönetimi için çevre değişkenleri
-ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
-# İki GPU'yu da kullan
-ENV CUDA_VISIBLE_DEVICES=0,1
-# CUDA ortam değişkenleri
-ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}:/usr/local/lib
+# VLLM ve diğer bağımlılıkları yükle
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    vllm==0.3.0 \
+    ray==2.7.1 \
+    pynccl \
+    psutil \
+    Flask==2.3.3 \
+    llama-index==0.9.16 \
+    pypdf \
+    pandas==2.1.1 \
+    langchain==0.0.312 \
+    sentence_transformers==2.2.2 \
+    faiss-gpu==1.7.2 \
+    llama-index-vector-stores-faiss==0.1.2 \
+    llama-index-llms-openai==0.1.4 \
+    llama-index-llms-huggingface==0.1.2 \
+    llama-index-embeddings-huggingface==0.1.2 \
+    llama-index-readers-file==0.1.4 \
+    && python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}')" \
+    && python -c "from vllm import LLM; print('vLLM imported successfully')"
 
-# vLLM yapılandırması
-ENV VLLM_USE_PAGED_ATTENTION=true
-ENV VLLM_ATTENTION_SHARD_SIZE=1024
-ENV VLLM_MAX_PARALLEL_LOADING_WORKERS=2
-ENV VLLM_GPU_MEMORY_UTILIZATION=0.85
-ENV VLLM_TENSOR_PARALLEL_SIZE=2
+# Ray önbelleği için geçici dizini oluştur
+RUN mkdir -p /tmp/ray/session_files && \
+    chmod -R 777 /tmp/ray
 
-# NVIDIA sürücü bilgilerini kontrol et
-RUN nvidia-smi || echo "nvidia-smi komutu çalıştırılamadı, ancak bu normal olabilir. Docker çalıştırılırken NVIDIA sürücüleri kullanılabilir olacaktır."
+# Uygulama klasörü oluştur ve dosyaları kopyala
+WORKDIR /app
+COPY . /app
 
-# Python bağımlılıklarını kopyala ve yükle
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Uygulama için gereken klasörleri oluştur
+RUN mkdir -p /app/model_cache /app/embedding_cache /app/storage /app/pdf_storage && \
+    chmod -R 777 /app
 
-# PyTorch CUDA kullanılabilirliğini kontrol et
-RUN python -c "import torch; print('CUDA kullanılabilir:', torch.cuda.is_available()); print('CUDA sürümü:', torch.version.cuda if torch.cuda.is_available() else 'Yok')" || echo "PyTorch CUDA kontrolü başarısız oldu, ancak bu normal olabilir."
+# Sistem bilgilerini kontrol et ve eğer varsa GPU'ları listele
+RUN nvidia-smi -L || echo "NVIDIA driver not found - will use CPU mode" && \
+    echo "Checking NCCL installation:" && ls -la /usr/lib/x86_64-linux-gnu/libnccl* || echo "NCCL not found in standard location"
 
-# vLLM kurulumunu kontrol et
-RUN python -c "from vllm import LLM; print('vLLM başarıyla kuruldu.')" || echo "vLLM kontrolü başarısız oldu, ancak bu normal olabilir."
+# GPU bellek kullanımını sınırla
+ENV VLLM_GPU_MEMORY_UTILIZATION=0.75 \
+    VLLM_MAX_MODEL_LEN=4096 \
+    VLLM_ENFORCE_EAGER=1 \
+    VLLM_USE_PAGED_ATTENTION=true \
+    VLLM_ENABLE_DISK_CACHE=true
 
-# Uygulama dosyalarını kopyala
-COPY rag_app.py .
-COPY Book1.json .
-COPY document.pdf .
-
-# Model ve storage dizinlerini oluştur
-RUN mkdir -p model_cache embedding_cache storage pdf_storage
-
-# Uygulama portunu aç
+# Port yapılandırması ve girdi noktası
 EXPOSE 5000
-
-# Çalışma komutu
 CMD ["python", "rag_app.py"] 
