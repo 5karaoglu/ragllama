@@ -247,20 +247,18 @@ def setup_llm():
 
                 # vLLM ile model yükle - doğrudan Vllm sınıfını kullan
                 llm = Vllm(
-                    model=model_name,
+                    model_name=model_name,  # model parameter değil, model_name kullanılmalı
+                    temperature=0.7,
+                    context_window=8192,  # Maksimum bağlam penceresi - max_model_len yerine
+                    max_new_tokens=1024,  # Daha uzun yanıtlar için
+                    top_p=0.95,
                     tensor_parallel_size=torch.cuda.device_count(),  # Tüm GPU'ları kullan
                     dtype="float16" if device == "cuda" else "float32",
                     trust_remote_code=True,
-                    max_model_len=8192,  # Maksimum bağlam penceresi
-                    temperature=0.7,
-                    top_p=0.95,
-                    max_new_tokens=1024,  # Daha uzun yanıtlar için
-                    vllm_kwargs={
-                        "gpu_memory_utilization": 0.85,  # GPU belleği kullanım oranı
-                        "enforce_eager": False,  # Daha yüksek verimlilik için eager modu kapatın
-                        "enable_lora": False,  # LoRA desteğini devre dışı bırak
-                        "download_dir": cache_dir
-                    }
+                    gpu_memory_utilization=0.85,  # GPU belleği kullanım oranı
+                    enforce_eager=False,  # Daha yüksek verimlilik için eager modu kapatın
+                    enable_lora=False,  # LoRA desteğini devre dışı bırak
+                    download_dir=cache_dir
                 )
                 
                 logger.info("vLLM ile model başarıyla yüklendi!")
