@@ -11,6 +11,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
+# NVIDIA paket deposunu ekle - NCCL için
+RUN wget -qO - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub | apt-key add - && \
+    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /" > /etc/apt/sources.list.d/cuda.list && \
+    apt-get update && apt-get install -y \
+    libnccl2 \
+    libnccl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # CUDA bellek yönetimi için çevre değişkenleri
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=512
 # İki GPU'yu da kullan
