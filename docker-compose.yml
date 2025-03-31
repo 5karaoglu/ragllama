@@ -27,9 +27,12 @@ services:
       - HF_HOME=/app/model_cache  # HuggingFace önbelleğini ayarla
       - VLLM_USE_PAGED_ATTENTION=true  # vLLM PagedAttention etkinleştir
       - VLLM_ATTENTION_SHARD_SIZE=1024  # vLLM için dikkat mekanizması parça boyutu
-      - VLLM_MAX_PARALLEL_LOADING_WORKERS=2  # Model yükleme için paralel işçi sayısı
-      - VLLM_GPU_MEMORY_UTILIZATION=0.60  # GPU bellek kullanım oranını azalt (0.75 -> 0.60)
+      - VLLM_MAX_PARALLEL_LOADING_WORKERS=1  # Model yükleme için paralel işçi sayısı
+      - VLLM_GPU_MEMORY_UTILIZATION=0.95  # GPU bellek kullanım oranını azalt (0.75 -> 0.60)
       - VLLM_TENSOR_PARALLEL_SIZE=2  # 2 GPU üzerinde tensor paralelizmi
+      - VLLM_BLOCK_SIZE=32
+      - VLLM_SWAP_SPACE=4
+      - VLLM_QUANTIZATION=  # Boş bırakıldı, otomatik algılama kullanılacak
       - BITSANDBYTES_NOWELCOME=1  # BitsAndBytes hoş geldin mesajını gizle
       - HF_HUB_ENABLE_HF_TRANSFER=1  # Hub'dan daha hızlı model indirme
       - KV_CACHE_BACKEND=quanto  # KV Cache için quanto backend kullan

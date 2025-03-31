@@ -250,13 +250,18 @@ def setup_llm():
                     "download_dir": cache_dir,
                     "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.95")),
                     "max_model_len": 4096,  # Maksimum bağlam uzunluğu
+                    "enforce_eager": True,  # Eager mode'u zorla
+                    "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
+                    "block_size": 32,  # PagedAttention için blok boyutu
+                    "swap_space": 4,  # GB cinsinden swap alanı
                 }
                 
-                if os.environ.get("VLLM_USE_PAGED_ATTENTION", "").lower() == "true":
-                    logger.info("vLLM PagedAttention etkinleştiriliyor...")
-                    vllm_engine_args["enforce_eager"] = False
+                # Eğer model zaten niceleme yapılmışsa, niceleme parametresini belirtme
+                if not os.environ.get("VLLM_QUANTIZATION"):
+                    logger.info("Model niceleme parametresi belirtilmedi, otomatik algılama kullanılacak")
                 else:
-                    logger.info("vLLM PagedAttention devre dışı")
+                    vllm_engine_args["quantization"] = os.environ.get("VLLM_QUANTIZATION")
+                    logger.info(f"Model niceleme parametresi: {os.environ.get('VLLM_QUANTIZATION')}")
                 
                 # vLLM engine'i oluştur
                 vllm_engine = LLM(**vllm_engine_args)
