@@ -166,10 +166,10 @@ def setup_debug_handler():
 
 # Model yapılandırması
 def setup_llm():
-    logger.info("DeepSeek-R1-Distill-Qwen-14B-AWQ modeli yapılandırılıyor...")
+    logger.info("DeepSeek-R1-Distill-Qwen-14B-4bit-BNB modeli yapılandırılıyor...")
     
-    # AWQ quantize edilmiş DeepSeek 14B modelini kullanacağız
-    model_name = "stelterlab/DeepSeek-R1-Distill-Qwen-14B-AWQ"
+    # 4-bit BNB quantize edilmiş DeepSeek 14B modelini kullanacağız
+    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-4bit-BNB"  # 4-bit BNB quantize edilmiş model
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -254,7 +254,7 @@ def setup_llm():
                     "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
                     "block_size": 32,  # PagedAttention için blok boyutu
                     "swap_space": 4,  # GB cinsinden swap alanı
-                    "quantization": "awq"  # AWQ quantization kullan
+                    "quantization": "bnb"  # BNB quantization kullan
                 }
                 
                 # vLLM engine'i oluştur
@@ -286,7 +286,7 @@ def setup_llm():
                 logger.info("CUDA kullanılamadığı için vLLM atlanıyor, HuggingFace kullanılıyor...")
                 
         # Klasik HuggingFace modelini yükle (vLLM başarısız olursa veya istenmezse)
-        logger.info("Klasik HuggingFace modeli AWQ formatında yükleniyor...")
+        logger.info("Klasik HuggingFace modeli 4-bit BNB formatında yükleniyor...")
         
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
@@ -294,7 +294,7 @@ def setup_llm():
             cache_dir=cache_dir
         )
         
-        # Model'i AWQ formatında yükle
+        # Model'i 4-bit BNB formatında yükle
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="auto" if device == "cuda" else None,
@@ -303,14 +303,14 @@ def setup_llm():
             cache_dir=cache_dir
         )
         
-        logger.info("HuggingFace modeli AWQ formatında başarıyla yüklendi")
+        logger.info("HuggingFace modeli 4-bit BNB formatında başarıyla yüklendi")
         logger.info(f"Model cihazı: {next(model.parameters()).device}")
         
         # Bellek kullanım bilgilerini logla
         if device == "cuda":
             for i in range(torch.cuda.device_count()):
                 allocated_mem = torch.cuda.memory_allocated(i) / 1024**3
-                logger.info(f"AWQ model bellek kullanımı (GPU {i}): {allocated_mem:.2f} GB")
+                logger.info(f"4-bit BNB model bellek kullanımı (GPU {i}): {allocated_mem:.2f} GB")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
         llm = HuggingFaceLLM(
@@ -325,7 +325,7 @@ def setup_llm():
             }
         )
         
-        logger.info("AWQ model başarıyla etkinleştirildi.")
+        logger.info("4-bit BNB model başarıyla etkinleştirildi.")
         return llm
         
     except Exception as e:
@@ -569,7 +569,7 @@ def system_info():
         response = {
             "status": "online",
             "llm_type": "vllm" if is_vllm else "huggingface",
-            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-AWQ"),
+            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-4bit-BNB"),
             "api_modules": {
                 "db_query_engine_ready": db_query_engine is not None,
                 "pdf_query_engine_ready": pdf_query_engine is not None
