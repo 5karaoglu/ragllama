@@ -52,8 +52,11 @@ RUN mkdir -p /tmp/ray && \
 
 # VLLM ve diğer bağımlılıkları yükle
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip config set global.timeout 300 && \
-    pip install --no-cache-dir --default-timeout=300 \
+    pip config set global.timeout 600 && \
+    pip config set global.retries 5 && \
+    pip config set global.index-url https://pypi.org/simple && \
+    pip config set global.extra-index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip install --no-cache-dir --default-timeout=600 \
     vllm==0.3.0 \
     ray==2.9.0 \
     pynccl \
