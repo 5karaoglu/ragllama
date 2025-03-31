@@ -169,7 +169,7 @@ def setup_llm():
     logger.info("DeepSeek-R1-Distill-Qwen-14B-AWQ modeli yapılandırılıyor...")
     
     # AWQ quantize edilmiş DeepSeek 14B modelini kullanacağız
-    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-AWQ"
+    model_name = "stelterlab/DeepSeek-R1-Distill-Qwen-14B-AWQ"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
