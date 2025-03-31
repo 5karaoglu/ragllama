@@ -253,8 +253,7 @@ def setup_llm():
                     "enforce_eager": True,  # Eager mode'u zorla
                     "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
                     "block_size": 32,  # PagedAttention için blok boyutu
-                    "swap_space": 4,  # GB cinsinden swap alanı
-                    "quantization": "bitsandbytes"  # bitsandbytes quantization kullan
+                    "swap_space": 4  # GB cinsinden swap alanı
                 }
                 
                 # vLLM engine'i oluştur
