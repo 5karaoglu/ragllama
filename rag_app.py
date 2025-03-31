@@ -248,7 +248,7 @@ def setup_llm():
                     "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
                     "dtype": "half",  # float16 kullan
                     "download_dir": cache_dir,
-                    "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.95")),
+                    "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.6")),
                     "max_model_len": 4096,  # Maksimum bağlam uzunluğu
                     "enforce_eager": True,  # Eager mode'u zorla
                     "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
