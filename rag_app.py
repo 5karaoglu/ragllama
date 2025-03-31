@@ -169,7 +169,7 @@ def setup_llm():
     logger.info("DeepSeek-R1-Distill-Qwen-14B-4bit-BNB modeli yapılandırılıyor...")
     
     # 4-bit BNB quantize edilmiş DeepSeek 14B modelini kullanacağız
-    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-4bit-BNB"  # 4-bit BNB quantize edilmiş model
+    model_name = "unsloth/DeepSeek-R1-Distill-Qwen-14B-unsloth-bnb-4bit"  # 4-bit BNB quantize edilmiş model
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
