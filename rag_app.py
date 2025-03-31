@@ -248,8 +248,8 @@ def setup_llm():
                     "tensor_parallel_size": int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
                     "dtype": "half",  # float16 kullan
                     "download_dir": cache_dir,
-                    "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.75")),
-                    "max_model_len": 8192,  # Maksimum bağlam uzunluğu
+                    "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEMORY_UTILIZATION", "0.95")),
+                    "max_model_len": 4096,  # Maksimum bağlam uzunluğu
                 }
                 
                 if os.environ.get("VLLM_USE_PAGED_ATTENTION", "").lower() == "true":
