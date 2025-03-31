@@ -254,7 +254,7 @@ def setup_llm():
                     "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
                     "block_size": 32,  # PagedAttention için blok boyutu
                     "swap_space": 4,  # GB cinsinden swap alanı
-                    "quantization": "bnb"  # BNB quantization kullan
+                    "quantization": "bitsandbytes"  # bitsandbytes quantization kullan
                 }
                 
                 # vLLM engine'i oluştur
