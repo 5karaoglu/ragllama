@@ -166,10 +166,10 @@ def setup_debug_handler():
 
 # Model yapılandırması
 def setup_llm():
-    logger.info("DeepSeek-R1-Distill-Qwen-14B modeli yapılandırılıyor...")
+    logger.info("DeepSeek-R1-Distill-Qwen-14B-AWQ modeli yapılandırılıyor...")
     
-    # DeepSeek-R1-Distill-Qwen-14B modelini kullanacağız
-    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+    # AWQ quantize edilmiş DeepSeek 14B modelini kullanacağız
+    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-AWQ"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -254,14 +254,8 @@ def setup_llm():
                     "disable_custom_all_reduce": True,  # Özel all_reduce'ı devre dışı bırak
                     "block_size": 32,  # PagedAttention için blok boyutu
                     "swap_space": 4,  # GB cinsinden swap alanı
+                    "quantization": "awq"  # AWQ quantization kullan
                 }
-                
-                # Eğer model zaten niceleme yapılmışsa, niceleme parametresini belirtme
-                if not os.environ.get("VLLM_QUANTIZATION"):
-                    logger.info("Model niceleme parametresi belirtilmedi, otomatik algılama kullanılacak")
-                else:
-                    vllm_engine_args["quantization"] = os.environ.get("VLLM_QUANTIZATION")
-                    logger.info(f"Model niceleme parametresi: {os.environ.get('VLLM_QUANTIZATION')}")
                 
                 # vLLM engine'i oluştur
                 vllm_engine = LLM(**vllm_engine_args)
@@ -283,9 +277,8 @@ def setup_llm():
                 
             except Exception as ve:
                 logger.error(f"vLLM model yükleme hatası: {str(ve)}")
-                logger.warning("vLLM hatası nedeniyle klasik HuggingFace modeline geçiliyor...")
-                # Tam hata bilgisini logla
                 logger.exception("Detaylı hata:")
+                raise Exception("vLLM modeli yüklenemedi. Lütfen sistem gereksinimlerini kontrol edin.")
         else:
             if llm_type != "vllm":
                 logger.info(f"LLM_TYPE={llm_type} olarak ayarlandı, HuggingFace kullanılıyor...")
@@ -293,7 +286,7 @@ def setup_llm():
                 logger.info("CUDA kullanılamadığı için vLLM atlanıyor, HuggingFace kullanılıyor...")
                 
         # Klasik HuggingFace modelini yükle (vLLM başarısız olursa veya istenmezse)
-        logger.info("Klasik HuggingFace modeli 4-bit NF4 formatında yükleniyor...")
+        logger.info("Klasik HuggingFace modeli AWQ formatında yükleniyor...")
         
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
@@ -301,37 +294,23 @@ def setup_llm():
             cache_dir=cache_dir
         )
         
-        # 4-bit NF4 quantization konfigürasyonu
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,  # 4-bit niceleme etkinleştir
-            bnb_4bit_quant_type="nf4",  # NF4 formatı (normal dağılıma uygun)
-            bnb_4bit_compute_dtype=torch.float16,  # Hesaplama data tipi
-            bnb_4bit_use_double_quant=True,  # Ek bellek tasarrufu için nested quantization
-        )
-        
-        # Model'i 4-bit olarak yükle
-        model_kwargs = {
-            "quantization_config": bnb_config,
-            "low_cpu_mem_usage": True,
-            "cache_dir": cache_dir,
-            "device_map": "auto" if device == "cuda" else None
-        }
-        
-        logger.info("4-bit NF4 formatında model yükleniyor: Bellek kullanımı 4x azalacak.")
-        
+        # Model'i AWQ formatında yükle
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            **model_kwargs
+            device_map="auto" if device == "cuda" else None,
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True,
+            cache_dir=cache_dir
         )
         
-        logger.info("HuggingFace modeli 4-bit NF4 formatında başarıyla yüklendi")
+        logger.info("HuggingFace modeli AWQ formatında başarıyla yüklendi")
         logger.info(f"Model cihazı: {next(model.parameters()).device}")
         
         # Bellek kullanım bilgilerini logla
         if device == "cuda":
             for i in range(torch.cuda.device_count()):
                 allocated_mem = torch.cuda.memory_allocated(i) / 1024**3
-                logger.info(f"4-bit model bellek kullanımı (GPU {i}): {allocated_mem:.2f} GB")
+                logger.info(f"AWQ model bellek kullanımı (GPU {i}): {allocated_mem:.2f} GB")
         
         # HuggingFaceLLM oluştur, model ve tokenizer'ı doğrudan geç
         llm = HuggingFaceLLM(
@@ -342,98 +321,17 @@ def setup_llm():
             generate_kwargs={
                 "temperature": 0.7, 
                 "do_sample": True, 
-                "top_p": 0.95,
-                # KV cache niceleme etkinleştir (4-bit modele ek olarak)
-                "cache_implementation": "quantized",
-                "cache_config": {
-                    "backend": os.environ.get("KV_CACHE_BACKEND", "quanto"),  # quanto veya HQQ
-                    "nbits": int(os.environ.get("KV_CACHE_NBITS", "4")),  # 4-bit KV cache
-                    "q_group_size": 128,  # Grup boyutu (daha düşük = daha doğru, daha yüksek = daha az bellek)
-                    "residual_length": int(os.environ.get("KV_CACHE_RESIDUAL_LENGTH", "128")),  # Residual uzunluğu
-                    "axis-key": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,  # quanto için 0, HQQ için 1
-                    "axis-value": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,  # quanto için 0, HQQ için 1
-                }
+                "top_p": 0.95
             }
         )
         
-        logger.info("4-bit NF4 model ve 4-bit KV Cache niceleme başarıyla etkinleştirildi.")
-        logger.info(f"KV Cache backend: {os.environ.get('KV_CACHE_BACKEND', 'quanto')}, KV Cache nbits: {os.environ.get('KV_CACHE_NBITS', '4')}")
+        logger.info("AWQ model başarıyla etkinleştirildi.")
         return llm
         
     except Exception as e:
         logger.error(f"Model yüklenirken hata oluştu: {str(e)}")
-        logger.error("Daha küçük bir model kullanmaya çalışılıyor...")
-        
-        # Daha küçük bir model dene
-        fallback_model = "deepseek-ai/deepseek-llm-7b-chat"
-        logger.info(f"Yedek model yükleniyor: {fallback_model}")
-        
-        try:
-            # 4-bit NF4 quantization konfigürasyonu (yedek model için)
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-            
-            tokenizer = AutoTokenizer.from_pretrained(
-                fallback_model,
-                cache_dir=cache_dir
-            )
-            
-            model = AutoModelForCausalLM.from_pretrained(
-                fallback_model,
-                quantization_config=bnb_config,
-                low_cpu_mem_usage=True,
-                cache_dir=cache_dir,
-                device_map="auto" if device == "cuda" else None
-            )
-            
-            logger.info("Yedek model 4-bit NF4 formatında başarıyla yüklendi")
-            
-        except Exception as fallback_error:
-            logger.error(f"4-bit yedek model yüklenirken hata: {str(fallback_error)}")
-            logger.warning("Standard float16 formatında yedek model deneniyor...")
-            
-            # 4-bit yükleme başarısız olursa, normal float16 yüklemeyi dene
-            tokenizer = AutoTokenizer.from_pretrained(
-                fallback_model,
-                cache_dir=cache_dir
-            )
-            
-            model = AutoModelForCausalLM.from_pretrained(
-                fallback_model,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-                low_cpu_mem_usage=True,
-                cache_dir=cache_dir,
-                device_map="auto" if device == "cuda" else None
-            )
-        
-        llm = HuggingFaceLLM(
-            model=model,
-            tokenizer=tokenizer,
-            model_context_length=8192,  # Modelin maksimum bağlam penceresi uzunluğu
-            max_new_tokens=1024,  # Üretilecek maksimum yeni token sayısı
-            generate_kwargs={
-                "temperature": 0.7, 
-                "do_sample": True, 
-                "top_p": 0.95,
-                # KV cache niceleme etkinleştir (yedek model için)
-                "cache_implementation": "quantized",
-                "cache_config": {
-                    "backend": os.environ.get("KV_CACHE_BACKEND", "quanto"),  # quanto veya HQQ
-                    "nbits": int(os.environ.get("KV_CACHE_NBITS", "4")),  # 4-bit KV cache
-                    "q_group_size": 128,  # Grup boyutu
-                    "residual_length": int(os.environ.get("KV_CACHE_RESIDUAL_LENGTH", "128")),  # Residual uzunluğu
-                    "axis-key": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,
-                    "axis-value": 0 if os.environ.get("KV_CACHE_BACKEND", "quanto") == "quanto" else 1,
-                }
-            }
-        )
-        
-        logger.info("Yedek model 4-bit formatında ve KV Cache nicelemesi ile yüklendi.")
-        return llm
+        logger.exception("Detaylı hata:")
+        raise Exception("Model yüklenemedi. Lütfen sistem gereksinimlerini ve model dosyalarını kontrol edin.")
 
 def setup_embedding_model():
     logger.info("Embedding modeli yapılandırılıyor...")
@@ -461,21 +359,8 @@ def setup_embedding_model():
         return embed_model
     except Exception as e:
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
-        logger.warning("Daha basit bir embedding modeli kullanmaya çalışılıyor...")
-        
-        try:
-            # Daha basit bir model dene
-            fallback_model = "sentence-transformers/all-MiniLM-L6-v2"
-            embed_model = HuggingFaceEmbedding(
-                model_name=fallback_model,
-                max_length=512
-            )
-            logger.info(f"Yedek embedding modeli {fallback_model} başarıyla yüklendi.")
-            return embed_model
-        except Exception as e:
-            logger.error(f"Yedek embedding modeli yüklenirken hata oluştu: {str(e)}")
-            logger.warning("Varsayılan embedding modeli kullanılacak.")
-            return None
+        logger.exception("Detaylı hata:")
+        raise Exception("Embedding modeli yüklenemedi. Lütfen sistem gereksinimlerini kontrol edin.")
 
 # JSON veri yükleme
 def load_json_data(file_path: str) -> Dict[str, Any]:
@@ -684,7 +569,7 @@ def system_info():
         response = {
             "status": "online",
             "llm_type": "vllm" if is_vllm else "huggingface",
-            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"),
+            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-AWQ"),
             "api_modules": {
                 "db_query_engine_ready": db_query_engine is not None,
                 "pdf_query_engine_ready": pdf_query_engine is not None
