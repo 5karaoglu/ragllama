@@ -28,7 +28,7 @@ services:
       - VLLM_USE_PAGED_ATTENTION=true  # vLLM PagedAttention etkinleştir
       - VLLM_ATTENTION_SHARD_SIZE=1024  # vLLM için dikkat mekanizması parça boyutu
       - VLLM_MAX_PARALLEL_LOADING_WORKERS=1  # Model yükleme için paralel işçi sayısı
-      - VLLM_GPU_MEMORY_UTILIZATION=0.6  # GPU bellek kullanım oranı
+      - VLLM_GPU_MEMORY_UTILIZATION=0.75  # GPU bellek kullanım oranı
       - VLLM_TENSOR_PARALLEL_SIZE=2  # 2 GPU üzerinde tensor paralelizmi
       - VLLM_BLOCK_SIZE=32
       - VLLM_SWAP_SPACE=4
