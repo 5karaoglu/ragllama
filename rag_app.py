@@ -568,7 +568,7 @@ def system_info():
         response = {
             "status": "online",
             "llm_type": "vllm" if is_vllm else "huggingface",
-            "llm_model": os.environ.get("LLM_MODEL", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-4bit-BNB"),
+            "llm_model": os.environ.get("LLM_MODEL", "unsloth/DeepSeek-R1-Distill-Qwen-14B-unsloth-bnb-4bit"),
             "api_modules": {
                 "db_query_engine_ready": db_query_engine is not None,
                 "pdf_query_engine_ready": pdf_query_engine is not None
