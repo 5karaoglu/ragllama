@@ -128,7 +128,8 @@ def setup_llm():
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             cache_dir=cache_dir,
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_fast=False  # Fast tokenizer'ı devre dışı bırak
         )
         
         # Model'i yükle
@@ -136,7 +137,8 @@ def setup_llm():
             "device_map": "auto",
             "quantization_config": quantization_config,
             "trust_remote_code": True,
-            "cache_dir": cache_dir
+            "cache_dir": cache_dir,
+            "torch_dtype": torch.float16  # float16 kullan
         }
         
         model = AutoModelForCausalLM.from_pretrained(
