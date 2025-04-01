@@ -49,40 +49,33 @@ def create_or_load_json_index(json_data: Dict[str, Any], persist_dir: str = "./s
 
 def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> VectorStoreIndex:
     """JSON verilerinden yeni bir indeks oluşturur."""
+    logger.info("Yeni JSON indeksi oluşturuluyor...")
+    
     try:
-        # Document nesneleri oluştur
+        # JSON verilerini düz metin olarak dönüştür
         documents = []
-        for page in json_data.get('pages', []):
-            doc = Document(
-                text=page.get('content', ''),
-                metadata={
-                    'page_number': page.get('page_number', 0),
-                    'source': 'Book1.json'
-                }
-            )
-            documents.append(doc)
-        
-        # Node parser oluştur
-        parser = SimpleNodeParser.from_defaults()
-        nodes = parser.get_nodes_from_documents(documents)
+        for key, value in json_data.items():
+            if isinstance(value, dict):
+                text = f"Key: {key}\n"
+                for k, v in value.items():
+                    text += f"{k}: {v}\n"
+            else:
+                text = f"Key: {key}\nValue: {value}\n"
+            documents.append(Document(text=text))
         
         # Vector store oluştur
-        vector_store = FaissVectorStore.from_documents(
-            documents,
-            embed_model=Settings.embed_model
-        )
+        vector_store = FaissVectorStore()
         
         # İndeks oluştur
-        index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            nodes=nodes
+        index = VectorStoreIndex.from_documents(
+            documents,
+            vector_store=vector_store,
+            show_progress=True
         )
         
         # İndeksi kaydet
-        index_path = os.path.join(persist_dir, "json_index")
-        index.storage_context.persist(persist_dir=index_path)
-        logger.info(f"JSON indeksi kaydedildi: {index_path}")
-        
+        index.storage_context.persist(persist_dir=persist_dir)
+        logger.info("JSON indeksi başarıyla oluşturuldu ve kaydedildi.")
         return index
         
     except Exception as e:
