@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, Any
 from pathlib import Path
 import faiss
+import numpy as np
 from llama_index.core import VectorStoreIndex, Document, Settings, StorageContext
 from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SimpleNodeParser
@@ -78,8 +79,14 @@ def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
             )
             documents.append(doc)
         
+        # Embedding boyutunu al
+        embed_model = Settings.embed_model
+        sample_text = "Sample text to determine embedding dimension"
+        sample_embedding = embed_model.get_text_embedding(sample_text)
+        dimension = len(sample_embedding)
+        logger.info(f"Embedding boyutu: {dimension}")
+        
         # FAISS indeksi oluştur (L2 mesafesi kullanan)
-        dimension = 768  # Varsayılan embedding boyutu
         faiss_index = faiss.IndexFlatL2(dimension)
         
         # FAISS vector store oluştur
