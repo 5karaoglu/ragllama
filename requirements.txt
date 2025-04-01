@@ -7,9 +7,9 @@ faiss-cpu==1.7.4
 sqlite-utils==3.35.2
 transformers==4.50.3
 torch==2.1.2
-accelerate==0.25.0
-bitsandbytes==0.41.3
-sentence-transformers==2.6.1
+accelerate==1.5.2
+bitsandbytes==0.42.0
+sentence-transformers==4.0.1
 python-dotenv==1.0.0
 tqdm==4.66.1
 colorlog==6.7.0
@@ -21,7 +21,7 @@ safetensors==0.5.3
 einops==0.7.0
 optimum==1.16.1
 protobuf==4.24.4
-peft==0.6.2
+peft==0.15.1
 # Aşağıdaki paketler GPU hızlandırma için opsiyonel
 # Kurulum hatası alınırsa yorum satırına alınabilir
 # xformers==0.0.22.post7
