@@ -155,17 +155,22 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
 
         logger.debug(f"'{table_name}' tablosuna (in-memory) veri yükleniyor...")
         try:
-            db = sqlite_utils.Database(engine)
-            # sqlite-utils'un PK'yı otomatik yönetmesine izin ver (rowid)
-            db[table_name].insert_all(data_list)
-            logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi.")
-            # Doğrulama için sütunları logla
-            logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
+            # Use a connection from the engine to interact with sqlite-utils
+            with engine.connect() as connection:
+                # Pass the raw DBAPI connection to sqlite_utils
+                db = sqlite_utils.Database(connection.connection)
+                # Insert data within the connection context
+                db[table_name].insert_all(data_list)
+                logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi.")
+                # Log columns for verification (using the sqlite_utils db object)
+                logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
+            # Connection is automatically closed here by the 'with' statement
         except Exception as e:
-            logger.error(f"sqlite-utils ile veri yüklenirken hata oluştu: {e}")
+            logger.error(f"sqlite-utils ile veri yüklenirken hata oluştu: {e}", exc_info=True)
             raise
 
         # --- 3. LlamaIndex SQLDatabase Nesnesi Oluştur ---
+        # SQLDatabase uses the engine, not the temporary connection
         logger.debug("LlamaIndex SQLDatabase nesnesi oluşturuluyor...")
         sql_database = SQLDatabase(engine, include_tables=[table_name])
         logger.info(f"SQLDatabase nesnesi '{table_name}' tablosu için oluşturuldu.")
