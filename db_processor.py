@@ -10,7 +10,7 @@ from pathlib import Path
 from llama_index.core import Document, Settings, VectorStoreIndex
 from llama_index.core.llms import LLM
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
-from llama_index.core.query_engine import JSONalyzeQueryEngine
+from llama_index.experimental.query_engine import JSONalyzeQueryEngine
 
 logger = logging.getLogger(__name__)
 

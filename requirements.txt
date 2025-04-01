@@ -3,6 +3,7 @@ llama-index-llms-huggingface==0.4.2
 llama-index-embeddings-huggingface==0.5.2
 llama-index-readers-json==0.3.0
 llama-index-vector-stores-faiss==0.3.0
+llama-index-experimental
 faiss-cpu==1.7.4
 sqlite-utils==3.35.2
 transformers==4.50.3
