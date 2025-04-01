@@ -70,9 +70,8 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
         nodes = parser.get_nodes_from_documents(documents)
         
         # Embedding boyutunu al
-        model_name = "BAAI/bge-large-en-v1.5"
-        st_model = SentenceTransformer(model_name)
-        embedding_size = st_model.get_sentence_embedding_dimension()
+        embed_model = Settings.embed_model
+        embedding_size = embed_model.get_text_embedding_dimension()
         
         # FAISS indeksi oluştur
         faiss_index = faiss.IndexFlatL2(embedding_size)
@@ -81,7 +80,7 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
         vector_store = FaissVectorStore(faiss_index=faiss_index)
         
         # Dökümanları vector store'a ekle
-        vector_store.add_nodes(nodes)
+        vector_store.add(nodes)
         
         # İndeks oluştur
         index = VectorStoreIndex.from_vector_store(
