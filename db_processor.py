@@ -112,13 +112,34 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> JSONa
             raise FileNotFoundError(f"JSON dosyası bulunamadı: {json_file}")
         
         # JSON verilerini yükle
-        json_data = load_json_data(json_file)
+        json_data_wrapper = load_json_data(json_file) # JSON'ın {"Sheet1": [...]} şeklinde olduğunu varsayıyoruz
+        json_data = json_data_wrapper.get("Sheet1") # Asıl liste verisini al
+
+        if not json_data or not isinstance(json_data, list):
+            raise ValueError("JSON formatı beklenenden farklı veya 'Sheet1' anahtarı altında liste bulunamadı.")
+
+        # İlk kayıttan anahtar (sütun) isimlerini alalım
+        if json_data and json_data[0]: # Liste boş değilse ve ilk elemanı varsa
+             keys_list = list(json_data[0].keys())
+             keys_str = ", ".join(f"`{k}`" for k in keys_list) # Anahtarları backtick içine alalım
+        else:
+             # Eğer ilk kayıt boşsa veya yoksa, manuel tanımla (güvenli liman)
+             keys_list = ["MuhasebeFisNumarası", "Tarih", "MuhasebeHesapKodu", "MuhasebeHesapAdi", "FaturaNumarasi", "FaturaBelgeNumarasi", "Sasi", "HizmetKartNumarasi", "HizmetKartAdi", "HizmetAciklamasi", "CariHesapKodu", "CariHesapAdi", "Tutar", "MuhasebeOnayDurumu", "Sube", "markaKodu", "KarGrubu", "Atolye", "GelirGrubu", "GelirGrubuDetayi", "Marka"]
+             keys_str = ", ".join(f"`{k}`" for k in keys_list)
+
+        table_name = "Sheet1" # Tablo adını belirt
         
-        # QA Şablonunu oluştur (sistem prompt'u ve anahtar adı talimatı ile birlikte)
+        # QA Şablonunu oluştur (sistem prompt'u, tablo adı ve katı anahtar adı talimatı ile birlikte)
         qa_template_str = f"""{system_prompt}
 
-Aşağıdaki JSON verilerini kullanarak soruyu yanıtla. JSON verileri bir SQL tablosu olarak temsil edilmektedir. 
-SQL sorguları oluştururken, sütun adları olarak JSON'daki tam anahtar adlarını (örneğin, MuhasebeFisNumarası, FaturaNumarasi, CariHesapAdi) kullanmalısın.
+Aşağıdaki JSON verilerini kullanarak soruyu yanıtla. Veriler `{table_name}` adlı bir SQL tablosunda bulunmaktadır.
+Kullanılabilir sütun adları ŞUNLARDIR ve YALNIZCA BUNLARDIR: {keys_str}.
+SQL sorguları oluştururken, tablo adı olarak `{table_name}` ve sütun adları olarak YALNIZCA yukarıdaki listedeki tam adları KULLANMALISIN. Büyük/küçük harfe dikkat et.
+ÖZELLİKLE ŞU HATALARI YAPMA:
+- 'faturaNo' veya 'InvoiceNumber' YERİNE `FaturaNumarasi` KULLAN.
+- 'müşteriAdı' YERİNE `CariHesapAdi` KULLAN.
+- 'tarih' YERİNE `Tarih` KULLAN.
+- `items` YERİNE `{table_name}` KULLAN.
 
 JSON Verisi (Bağlam):
 ---------------------
@@ -127,15 +148,16 @@ JSON Verisi (Bağlam):
 Soru: {{query_str}}
 Yanıt (Gerekirse SQL sorgusu ile birlikte):"""
 
-        # JSONalyzeQueryEngine oluştur (özelleştirilmiş QA şablonu ve list_of_dict ile)
+        # JSONalyzeQueryEngine oluştur (güncellenmiş QA şablonu ve list_of_dict ile)
         query_engine = JSONalyzeQueryEngine(
-            list_of_dict=[json_data],
+            list_of_dict=json_data, # Sadece listeyi verelim
+            table_name=table_name, # Tablo adını ayrıca belirtelim
             llm=llm,
-            text_qa_template=qa_template_str,
+            text_qa_template=qa_template_str, 
             verbose=True
         )
         
-        logger.info("JSONalyzeQueryEngine başarıyla oluşturuldu (güncellenmiş QA şablonu ile)")
+        logger.info("JSONalyzeQueryEngine başarıyla oluşturuldu (çok detaylı QA şablonu ile)")
         return query_engine
         
     except Exception as e:
