@@ -8,14 +8,14 @@ import logging
 from typing import Dict, Any, List
 from pathlib import Path
 
-# LlamaIndex Core Imports (Keep Settings if needed elsewhere)
+# LlamaIndex Core Imports
 from llama_index.core import Settings
 from llama_index.core.llms import LLM
 
-# New Imports for NLSQLTableQueryEngine approach
-from sqlalchemy import create_engine
-import sqlite_utils
-import sqlite3
+# SQLAlchemy Imports for DB creation and interaction
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, Float, inspect
+
+# LlamaIndex SQL Utilities
 from llama_index.core.utilities.sql_wrapper import SQLDatabase
 from llama_index.core.query_engine import NLSQLTableQueryEngine
 
@@ -96,48 +96,43 @@ def load_json_data(file_path: str) -> Dict[str, Any]:
 def filter_llm_response_for_sql(llm_response: str) -> str:
     """LLM yanıtından SQL sorgusunu çıkarır (NLSQLTableQueryEngine bunu genellikle kendi yönetir)."""
     try:
-        # SQL sorgusunu bul (Basit arama)
         sql_match = None
         if "```sql" in llm_response:
             sql_match = llm_response.split("```sql")[1].split("```")[0].strip()
-        elif "SELECT " in llm_response and ";" in llm_response: # Daha genel arama
+        elif "SELECT " in llm_response and ";" in llm_response:
              start = llm_response.find("SELECT ")
              end = llm_response.find(";", start)
              if start != -1 and end != -1:
                  sql_match = llm_response[start:end+1].strip()
 
         if sql_match:
-             # Temizleme (varsa ``` kaldır)
              sql = sql_match.replace("```", "").strip()
-             # Sadece tek bir ifade olduğundan emin ol (ilkini al)
              sql = sql.split(';')[0].strip() + ';'
-             # Sorgu sonunda gereksiz karakter varsa kaldır (opsiyonel)
              if sql.endswith((".", "!", "?", ";;")):
                   sql = sql[:-1].strip()
                   if not sql.endswith(';'):
-                      sql += ';' # Tek bir ; ile bitmesini sağla
+                      sql += ';'
              logger.debug(f"Ayıklanan SQL: {sql}")
              return sql
         else:
-             # SQL bulunamazsa orijinal yanıtı (veya boş string) döndür
              logger.warning("Yanıt içinde SQL sorgusu bulunamadı.")
-             return "" # Veya llm_response
+             return ""
 
     except Exception as e:
         logger.error(f"SQL sorgusu çıkarılırken hata oluştu: {str(e)}")
-        return "" # Hata durumunda boş string
+        return ""
 
+# --- Rewritten setup_db_query_engine using SQLAlchemy exclusively ---
 def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQLTableQueryEngine:
-    """Veritabanı sorgu motorunu NLSQLTableQueryEngine kullanarak oluşturur."""
-    logger.info(f"NLSQLTableQueryEngine için kurulum başlatılıyor: {json_file}")
+    """Veritabanı sorgu motorunu NLSQLTableQueryEngine kullanarak oluşturur (SQLAlchemy ile)."""
+    logger.info(f"NLSQLTableQueryEngine için kurulum başlatılıyor (SQLAlchemy): {json_file}")
     try:
         # --- 1. JSON Verisini Yükle ve Hazırla ---
-        json_key = "Sheet1" # JSON dosyasındaki liste anahtarı
-        table_name = "muhasebe_kayitlari" # SQL tablosuna verilecek ad
+        json_key = "Sheet1"
+        table_name = "muhasebe_kayitlari"
 
         logger.debug(f"'{json_file}' dosyasından ham veri yükleniyor...")
         data_wrapper = load_json_data(json_file)
-
         logger.debug(f"'{json_key}' anahtarından veri listesi alınıyor...")
         data_list = data_wrapper.get(json_key)
         if data_list is None:
@@ -145,68 +140,82 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
         if not isinstance(data_list, list):
             raise ValueError(f"'{json_key}' anahtarı altında bir liste bekleniyordu, fakat {type(data_list)} bulundu.")
         if not data_list:
-            # Boş liste durumu - Hata ver veya boş motor döndür? Şimdilik hata verelim.
             raise ValueError(f"'{json_key}' anahtarı altındaki liste boş, sorgu motoru oluşturulamaz.")
         logger.info(f"'{json_key}' anahtarından {len(data_list)} kayıt başarıyla alındı.")
 
-        # --- 2. In-Memory SQLite DB Oluştur ve Veriyi Yükle ---
-        # Use a shared in-memory database URI
-        db_path = "file::memory:?cache=shared" 
-        db_uri = f"sqlite:///{db_path}"
-        sqlite3_conn_str = db_path # sqlite3 uses the path directly
-        
-        logger.debug(f"'{table_name}' tablosuna (shared in-memory) veri yükleniyor...")
-        conn = None # Initialize conn
-        try:
-            # Connect using sqlite3 for initial loading with sqlite-utils
-            logger.debug(f"sqlite3 ile bağlantı kuruluyor: {sqlite3_conn_str}")
-            conn = sqlite3.connect(sqlite3_conn_str)
-            db = sqlite_utils.Database(conn)
-            # Insert data
-            logger.debug("sqlite-utils ile veri ekleniyor...")
-            db[table_name].insert_all(data_list)
-            # Explicitly commit the changes made via the sqlite3 connection
-            logger.debug("Değişiklikler commit ediliyor...")
-            conn.commit()
-            logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi ve commit edildi.")
-            # Log columns for verification
-            logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
-        except Exception as e:
-            logger.error(f"sqlite3/sqlite-utils ile veri yüklenirken hata oluştu: {e}", exc_info=True)
-            raise
-        finally:
-            # Ensure the sqlite3 connection is closed
-            if conn:
-                logger.debug("sqlite3 bağlantısı kapatılıyor.")
-                conn.close()
-
-        # --- 3. LlamaIndex SQLDatabase Nesnesi Oluştur ---
-        # Create SQLAlchemy engine connecting to the SAME shared in-memory DB
+        # --- 2. SQLAlchemy Engine Oluştur ---
+        db_uri = "sqlite:///file::memory:?cache=shared"
         logger.debug(f"SQLAlchemy motoru oluşturuluyor: {db_uri}")
         engine = create_engine(db_uri)
+        metadata = MetaData()
+
+        # --- 3. Tablo Şemasını Dinamik Olarak Tanımla ---
+        logger.debug("Tablo şeması JSON verisinden dinamik olarak belirleniyor...")
+        columns = []
+        first_record = data_list[0]
+        for key, value in first_record.items():
+            col_type = String # Default to String
+            if isinstance(value, int):
+                col_type = Integer
+            elif isinstance(value, float):
+                col_type = Float # Use Float for potential decimals
+            elif isinstance(value, str):
+                col_type = String
+            # Add more type checks if needed (e.g., for dates)
+            columns.append(Column(key, col_type))
+            logger.debug(f" Sütun: {key} -> Tür: {col_type}")
+
+        logger.debug(f"SQLAlchemy Table nesnesi tanımlanıyor: {table_name}")
+        dynamic_table = Table(table_name, metadata, *columns)
+
+        # --- 4. Tabloyu Veritabanında Oluştur ---
+        logger.debug(f"'{table_name}' tablosu veritabanında oluşturuluyor (eğer yoksa)...")
+        try:
+             metadata.create_all(bind=engine)
+             logger.info(f"'{table_name}' tablosu başarıyla oluşturuldu/kontrol edildi.")
+             # Verify table creation
+             inspector = inspect(engine)
+             if not inspector.has_table(table_name):
+                 raise RuntimeError(f"Tablo '{table_name}' oluşturulduktan sonra veritabanında bulunamadı!")
+             logger.debug(f"Tablo '{table_name}' varlığı doğrulandı.")
+        except Exception as e:
+             logger.error(f"SQLAlchemy ile tablo oluşturulurken hata: {e}", exc_info=True)
+             raise
+
+        # --- 5. Veriyi Tabloya Yükle ---
+        logger.debug(f"'{table_name}' tablosuna veri yükleniyor (SQLAlchemy)...")
+        try:
+            with engine.connect() as connection:
+                # Begin transaction
+                with connection.begin(): 
+                    connection.execute(dynamic_table.insert(), data_list)
+                # Transaction is automatically committed here by connection.begin()
+                logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi (SQLAlchemy).")
+        except Exception as e:
+            logger.error(f"SQLAlchemy ile veri yüklenirken hata: {e}", exc_info=True)
+            raise
+
+        # --- 6. LlamaIndex SQLDatabase Nesnesi Oluştur ---
         logger.debug("LlamaIndex SQLDatabase nesnesi oluşturuluyor...")
         sql_database = SQLDatabase(engine, include_tables=[table_name])
         logger.info(f"SQLDatabase nesnesi '{table_name}' tablosu için oluşturuldu.")
-        # İsteğe bağlı: Şemayı logla
         try:
             table_info = sql_database.get_table_info([table_name])
             logger.debug(f"Alınan tablo bilgisi:\n{table_info}")
         except Exception as e:
             logger.warning(f"Tablo bilgisi alınırken hata oluştu (devam ediliyor): {e}")
 
-
-        # --- 4. NLSQLTableQueryEngine Oluştur ---
-        # system_prompt burada doğrudan kullanılmaz. NLSQLTableQueryEngine şemayı kullanır.
+        # --- 7. NLSQLTableQueryEngine Oluştur ---
         logger.debug("NLSQLTableQueryEngine oluşturuluyor...")
         query_engine = NLSQLTableQueryEngine(
             sql_database=sql_database,
             tables=[table_name],
-            llm=llm, # LLM'i doğrudan ver
-            verbose=True # Debugging için loglamayı etkin tut
+            llm=llm,
+            verbose=True
         )
-        logger.info("NLSQLTableQueryEngine başarıyla oluşturuldu.")
+        logger.info("NLSQLTableQueryEngine başarıyla oluşturuldu (SQLAlchemy tabanlı).")
         return query_engine
 
     except Exception as e:
-        logger.error(f"NLSQLTableQueryEngine kurulumunda genel hata: {e}", exc_info=True) # Hatanın izini sür
-        raise # Hatayı tekrar fırlat 
+        logger.error(f"NLSQLTableQueryEngine kurulumunda genel hata: {e}", exc_info=True)
+        raise 
