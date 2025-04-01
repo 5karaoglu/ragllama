@@ -124,11 +124,11 @@ Aşağıdaki JSON verilerini kullanarak soruyu yanıtla:
 Soru: {{query_str}}
 Yanıt:"""
 
-        # JSONalyzeQueryEngine oluştur (özelleştirilmiş QA şablonu ile)
+        # JSONalyzeQueryEngine oluştur (özelleştirilmiş QA şablonu ve list_of_dict ile)
         query_engine = JSONalyzeQueryEngine(
-            json_value=json_data,
+            list_of_dict=[json_data],
             llm=llm,
-            text_qa_template=qa_template_str, # Özel QA şablonunu ekle
+            text_qa_template=qa_template_str,
             verbose=True
         )
         
