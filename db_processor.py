@@ -65,26 +65,9 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
                 text = f"Key: {key}\nValue: {value}\n"
             documents.append(Document(text=text))
         
-        # Node parser oluştur
-        parser = SimpleNodeParser.from_defaults()
-        nodes = parser.get_nodes_from_documents(documents)
-        
-        # BGE-large-en-v1.5 modelinin embedding boyutu
-        embedding_size = 1024
-        
-        # FAISS indeksi oluştur
-        faiss_index = faiss.IndexFlatL2(embedding_size)
-        
-        # Vector store oluştur
-        vector_store = FaissVectorStore(faiss_index=faiss_index)
-        
-        # Dökümanları vector store'a ekle
-        vector_store.add(nodes)
-        
-        # İndeks oluştur
-        index = VectorStoreIndex.from_vector_store(
-            vector_store=vector_store,
-            nodes=nodes,
+        # Doğrudan VectorStoreIndex.from_documents() metodunu kullan
+        index = VectorStoreIndex.from_documents(
+            documents,
             show_progress=True
         )
         
