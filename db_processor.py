@@ -69,9 +69,8 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
         parser = SimpleNodeParser.from_defaults()
         nodes = parser.get_nodes_from_documents(documents)
         
-        # Embedding boyutunu al
-        embed_model = Settings.embed_model
-        embedding_size = embed_model.get_text_embedding_dimension()
+        # BGE-large-en-v1.5 modelinin embedding boyutu
+        embedding_size = 1024
         
         # FAISS indeksi oluştur
         faiss_index = faiss.IndexFlatL2(embedding_size)
