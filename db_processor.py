@@ -15,6 +15,7 @@ from llama_index.core.llms import LLM
 # New Imports for NLSQLTableQueryEngine approach
 from sqlalchemy import create_engine
 import sqlite_utils
+import sqlite3
 from llama_index.core.utilities.sql_wrapper import SQLDatabase
 from llama_index.core.query_engine import NLSQLTableQueryEngine
 
@@ -149,28 +150,37 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
         logger.info(f"'{json_key}' anahtarından {len(data_list)} kayıt başarıyla alındı.")
 
         # --- 2. In-Memory SQLite DB Oluştur ve Veriyi Yükle ---
-        db_uri = "sqlite:///:memory:" # In-memory veritabanı URI'si
-        logger.debug(f"SQLAlchemy motoru oluşturuluyor: {db_uri}")
-        engine = create_engine(db_uri)
-
-        logger.debug(f"'{table_name}' tablosuna (in-memory) veri yükleniyor...")
+        # Use a shared in-memory database URI
+        db_path = "file::memory:?cache=shared" 
+        db_uri = f"sqlite:///{db_path}"
+        sqlite3_conn_str = db_path # sqlite3 uses the path directly
+        
+        logger.debug(f"'{table_name}' tablosuna (shared in-memory) veri yükleniyor...")
+        conn = None # Initialize conn
         try:
-            # Use a connection from the engine to interact with sqlite-utils
-            with engine.connect() as connection:
-                # Pass the raw DBAPI connection to sqlite_utils
-                db = sqlite_utils.Database(connection.connection)
-                # Insert data within the connection context
-                db[table_name].insert_all(data_list)
-                logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi.")
-                # Log columns for verification (using the sqlite_utils db object)
-                logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
-            # Connection is automatically closed here by the 'with' statement
+            # Connect using sqlite3 for initial loading with sqlite-utils
+            logger.debug(f"sqlite3 ile bağlantı kuruluyor: {sqlite3_conn_str}")
+            conn = sqlite3.connect(sqlite3_conn_str)
+            db = sqlite_utils.Database(conn)
+            # Insert data
+            logger.debug("sqlite-utils ile veri ekleniyor...")
+            db[table_name].insert_all(data_list)
+            logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi.")
+            # Log columns for verification
+            logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
         except Exception as e:
-            logger.error(f"sqlite-utils ile veri yüklenirken hata oluştu: {e}", exc_info=True)
+            logger.error(f"sqlite3/sqlite-utils ile veri yüklenirken hata oluştu: {e}", exc_info=True)
             raise
+        finally:
+            # Ensure the sqlite3 connection is closed
+            if conn:
+                logger.debug("sqlite3 bağlantısı kapatılıyor.")
+                conn.close()
 
         # --- 3. LlamaIndex SQLDatabase Nesnesi Oluştur ---
-        # SQLDatabase uses the engine, not the temporary connection
+        # Create SQLAlchemy engine connecting to the SAME shared in-memory DB
+        logger.debug(f"SQLAlchemy motoru oluşturuluyor: {db_uri}")
+        engine = create_engine(db_uri)
         logger.debug("LlamaIndex SQLDatabase nesnesi oluşturuluyor...")
         sql_database = SQLDatabase(engine, include_tables=[table_name])
         logger.info(f"SQLDatabase nesnesi '{table_name}' tablosu için oluşturuldu.")
