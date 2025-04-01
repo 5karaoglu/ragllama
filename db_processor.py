@@ -118,23 +118,10 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> Retri
         # İndeksi oluştur veya yükle
         index = create_or_load_json_index(json_data)
         
-        # Retriever oluştur
-        retriever = VectorIndexRetriever(
-            index=index,
-            similarity_top_k=3
-        )
-        
-        # Response synthesizer oluştur
-        response_synthesizer = get_response_synthesizer(
-            response_mode="tree_summarize",
-            llm=llm,
-            service_context={"system_prompt": system_prompt}
-        )
-        
-        # Query engine oluştur
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever,
-            response_synthesizer=response_synthesizer
+        # Query engine'i doğrudan index'ten oluştur
+        query_engine = index.as_query_engine(
+            similarity_top_k=3,
+            response_mode="tree_summarize"
         )
         
         logger.info("Veritabanı sorgu motoru başarıyla oluşturuldu")
