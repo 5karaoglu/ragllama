@@ -14,6 +14,7 @@ from llama_index.vector_stores.faiss import FaissVectorStore
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
+import faiss
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,15 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
         parser = SimpleNodeParser.from_defaults()
         nodes = parser.get_nodes_from_documents(documents)
         
+        # Embedding boyutunu al
+        embed_model = Settings.embed_model
+        embedding_size = embed_model.get_text_embedding_dimension()
+        
+        # FAISS indeksi oluştur
+        faiss_index = faiss.IndexFlatL2(embedding_size)
+        
         # Vector store oluştur
-        vector_store = FaissVectorStore()
+        vector_store = FaissVectorStore(faiss_index=faiss_index)
         
         # Dökümanları vector store'a ekle
         vector_store.add_nodes(nodes)
