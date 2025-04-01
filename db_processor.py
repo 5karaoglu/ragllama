@@ -7,14 +7,13 @@ import json
 import logging
 from typing import Dict, Any
 from pathlib import Path
-from llama_index.core import VectorStoreIndex, Document
+from llama_index.core import VectorStoreIndex, Document, Settings
 from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SimpleNodeParser
-from llama_index.vector_stores.faiss import FaissVectorStore
+from llama_index.core.vector_stores import FaissVectorStore
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
-from llama_index.core import Settings
-from llama_index.retrievers import VectorIndexRetriever
-from llama_index.query_engine import RetrieverQueryEngine
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.query_engine import RetrieverQueryEngine
 
 logger = logging.getLogger(__name__)
 
