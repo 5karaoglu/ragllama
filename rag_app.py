@@ -5,9 +5,15 @@ import os
 import logging
 import colorlog
 import torch
+import gc
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from flask import Flask
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from sentence_transformers import SentenceTransformer
+from bitsandbytes.nn import Linear4bit
+from transformers import BitsAndBytesConfig
+
 from llama_index.core import Settings
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -70,10 +76,10 @@ def setup_debug_handler():
 
 # Model yapılandırması
 def setup_llm():
-    logger.info("DeepSeek-R1-Distill-Qwen-14B modeli yapılandırılıyor...")
+    logger.info("DeepSeek-R1-Distill-Qwen-14B-unsloth-bnb-4bit modeli yapılandırılıyor...")
     
-    # DeepSeek-R1-Distill-Qwen-14B modelini kullanacağız
-    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+    # Model adı ve cache dizini
+    model_name = "unsloth/DeepSeek-R1-Distill-Qwen-14B-unsloth-bnb-4bit"
     cache_dir = "./model_cache"
     
     # Cache dizinini oluştur
@@ -93,7 +99,6 @@ def setup_llm():
             
             # CUDA önbelleğini temizle
             torch.cuda.empty_cache()
-            import gc
             gc.collect()
             
             # CUDA ortam değişkenlerini kontrol et
@@ -108,31 +113,31 @@ def setup_llm():
     
     logger.info(f"Cihaz: {device}")
     
-    # Önce model ve tokenizer'ı manuel olarak yükleyelim
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    
     try:
         logger.info(f"Model yükleniyor: {model_name}")
+        
+        # 4-bit quantization yapılandırması
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        )
         
         # Tokenizer'ı yükle
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
-            cache_dir=cache_dir
+            cache_dir=cache_dir,
+            trust_remote_code=True
         )
         
         # Model'i yükle
         model_kwargs = {
-            "torch_dtype": torch.float16 if device == "cuda" else torch.float32,
-            "low_cpu_mem_usage": True,
+            "device_map": "auto",
+            "quantization_config": quantization_config,
+            "trust_remote_code": True,
             "cache_dir": cache_dir
         }
-        
-        # device_map'i sadece burada kullan
-        if device == "cuda":
-            model_kwargs["device_map"] = "auto"
-            logger.info("GPU kullanılacak: device_map=auto")
-        else:
-            logger.warning("GPU kullanılamıyor, CPU kullanılacak!")
         
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -167,9 +172,6 @@ def setup_embedding_model():
         
         # Cache dizinini oluştur
         os.makedirs(cache_dir, exist_ok=True)
-        
-        # Sentence-transformers kullanarak modeli yükle
-        from sentence_transformers import SentenceTransformer
         
         # Önce SentenceTransformer ile modeli yükle
         st_model = SentenceTransformer(model_name, cache_folder=cache_dir)
