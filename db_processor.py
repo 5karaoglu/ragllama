@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, 
 # LlamaIndex SQL Utilities
 from llama_index.core.utilities.sql_wrapper import SQLDatabase
 from llama_index.core.query_engine import NLSQLTableQueryEngine
+from llama_index.core.prompts import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -207,13 +208,31 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
 
         # --- 7. NLSQLTableQueryEngine Oluştur ---
         logger.debug("NLSQLTableQueryEngine oluşturuluyor...")
+
+        # Özel Text-to-SQL Prompt Şablonu (Tam sütun adlarını kullanmaya zorla)
+        custom_sql_prompt_str = (
+            "Verilen bir girdi sorusu için, önce çalıştırılacak sözdizimsel olarak doğru bir {dialect} "
+            "sorgusu oluştur, ardından sorgunun sonuçlarına bak ve yanıtı döndür.\n"
+            "Doğru sütun adlarını kullanmak için aşağıda sağlanan tablo şemasını KULLANMALISIN.\n"
+            "Şemada sağlanan TAM sütun adlarına (büyük/küçük harf dahil) ÇOK DİKKAT ET.\n"
+            "Sütun adlarını snake_case veya başka bir formata dönüştürme. Tam adları kullan.\n"
+            "Tablo Şeması:\n"
+            "---------------------\n"
+            "{schema}\n"
+            "---------------------\n"
+            "Soru: {query_str}\n"
+            "SQL Sorgusu: "
+        )
+        custom_text_to_sql_prompt = PromptTemplate(custom_sql_prompt_str)
+
         query_engine = NLSQLTableQueryEngine(
             sql_database=sql_database,
             tables=[table_name],
             llm=llm,
+            text_to_sql_prompt=custom_text_to_sql_prompt,
             verbose=True
         )
-        logger.info("NLSQLTableQueryEngine başarıyla oluşturuldu (SQLAlchemy tabanlı).")
+        logger.info("NLSQLTableQueryEngine başarıyla oluşturuldu (SQLAlchemy tabanlı, özel prompt ile).")
         return query_engine
 
     except Exception as e:
