@@ -124,11 +124,13 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> Retri
         )
         
         # Query engine oluştur
-        query_engine = RetrieverQueryEngine.from_defaults(
+        query_engine = RetrieverQueryEngine(
             retriever=retriever,
             llm=llm,
             system_prompt=system_prompt,
-            response_mode="tree_summarize"  # Yanıtları özetle
+            response_synthesizer_kwargs={
+                "response_mode": "tree_summarize"  # Yanıtları özetle
+            }
         )
         
         logger.info("Veritabanı sorgu motoru başarıyla oluşturuldu")
