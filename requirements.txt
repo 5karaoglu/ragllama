@@ -6,6 +6,7 @@ llama-index-vector-stores-faiss==0.3.0
 llama-index-experimental
 faiss-cpu==1.7.4
 sqlite-utils==3.35.2
+SQLAlchemy>=1.4
 transformers==4.50.3
 torch==2.1.2
 accelerate==1.5.2
