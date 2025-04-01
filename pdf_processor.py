@@ -121,18 +121,11 @@ def setup_pdf_query_engine(pdf_file: str, llm: LLM, system_prompt: str) -> Retri
         # İndeksi oluştur veya yükle
         index = create_or_load_pdf_index(pdf_file)
         
-        # Retriever oluştur
-        retriever = VectorIndexRetriever(
-            index=index,
-            similarity_top_k=3
-        )
-        
-        # Query engine oluştur
-        query_engine = RetrieverQueryEngine.from_defaults(
-            retriever=retriever,
-            llm=llm,
-            system_prompt=system_prompt,
-            response_mode="tree_summarize"  # Yanıtları özetle
+        # Query engine'i doğrudan index'ten oluştur
+        query_engine = index.as_query_engine(
+            similarity_top_k=3,
+            response_mode="tree_summarize",  # Yanıtları özetle
+            system_prompt=system_prompt
         )
         
         logger.info("PDF sorgu motoru başarıyla oluşturuldu")
