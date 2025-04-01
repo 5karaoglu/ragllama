@@ -8,7 +8,13 @@ from typing import List, Dict, Any
 from pathlib import Path
 import faiss
 import numpy as np
-from llama_index.core import VectorStoreIndex, Document, Settings, StorageContext
+from llama_index.core import (
+    VectorStoreIndex,
+    Document,
+    Settings,
+    StorageContext,
+    load_index_from_storage
+)
 from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.vector_stores.faiss import FaissVectorStore
@@ -54,7 +60,10 @@ def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") 
         # İndeks zaten varsa yükle
         if os.path.exists(index_path):
             logger.info(f"Mevcut PDF indeksi yükleniyor: {index_path}")
-            return VectorStoreIndex.load(index_path)
+            # Storage context'i yükle
+            storage_context = StorageContext.load(persist_dir=index_path)
+            # İndeksi storage context'ten yükle
+            return load_index_from_storage(storage_context)
         
         # Yeni indeks oluştur
         logger.info("Yeni PDF indeksi oluşturuluyor...")
