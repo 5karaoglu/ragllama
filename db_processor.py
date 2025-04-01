@@ -7,16 +7,10 @@ import json
 import logging
 from typing import Dict, Any
 from pathlib import Path
-from llama_index.core import VectorStoreIndex, Document, Settings
+from llama_index.core import Document, Settings
 from llama_index.core.llms import LLM
-from llama_index.core.node_parser import SimpleNodeParser
-from llama_index.vector_stores.faiss import FaissVectorStore
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.response_synthesizers import get_response_synthesizer
-from sentence_transformers import SentenceTransformer
-import faiss
+from llama_index.core.query_engine import JSONalyzeQueryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +34,7 @@ def create_or_load_json_index(json_data: Dict[str, Any], persist_dir: str = "./s
         # İndeks zaten varsa yükle
         if os.path.exists(index_path):
             logger.info(f"Mevcut JSON indeksi yükleniyor: {index_path}")
-            return VectorStoreIndex.load(index_path)
+            raise NotImplementedError("VectorStoreIndex loading needs adjustment if this function is kept.")
         
         # Yeni indeks oluştur
         logger.info("Yeni JSON indeksi oluşturuluyor...")
@@ -105,8 +99,8 @@ def filter_llm_response_for_sql(llm_response: str) -> str:
         logger.error(f"SQL sorgusu çıkarılırken hata oluştu: {str(e)}")
         raise
 
-def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> RetrieverQueryEngine:
-    """Veritabanı sorgu motorunu oluşturur."""
+def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> JSONalyzeQueryEngine:
+    """Veritabanı sorgu motorunu JSONalyzeQueryEngine kullanarak oluşturur."""
     try:
         # JSON dosyasının varlığını kontrol et
         if not os.path.exists(json_file):
@@ -115,18 +109,16 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> Retri
         # JSON verilerini yükle
         json_data = load_json_data(json_file)
         
-        # İndeksi oluştur veya yükle
-        index = create_or_load_json_index(json_data)
-        
-        # Query engine'i doğrudan index'ten oluştur
-        query_engine = index.as_query_engine(
-            similarity_top_k=3,
-            response_mode="tree_summarize"
+        # JSONalyzeQueryEngine oluştur
+        query_engine = JSONalyzeQueryEngine(
+            json_value=json_data,
+            llm=llm,
+            verbose=True
         )
         
-        logger.info("Veritabanı sorgu motoru başarıyla oluşturuldu")
+        logger.info("JSONalyzeQueryEngine başarıyla oluşturuldu")
         return query_engine
         
     except Exception as e:
-        logger.error(f"Veritabanı sorgu motoru oluşturulurken hata oluştu: {str(e)}")
+        logger.error(f"JSONalyzeQueryEngine oluşturulurken hata oluştu: {str(e)}")
         raise 
