@@ -32,6 +32,10 @@ RUN python -c "import torch; print('CUDA kullanılabilir:', torch.cuda.is_availa
 
 # Uygulama dosyalarını kopyala
 COPY rag_app.py .
+COPY api.py .
+COPY db_processor.py .
+COPY pdf_processor.py .
+COPY prompts.py .
 COPY Book1.json .
 COPY document.pdf .
 
