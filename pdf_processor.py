@@ -6,7 +6,7 @@ import os
 import logging
 from typing import List, Dict, Any
 from pathlib import Path
-from llama_index.core import VectorStoreIndex, Document, Settings
+from llama_index.core import VectorStoreIndex, Document, Settings, StorageContext
 from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.vector_stores.faiss import FaissVectorStore
@@ -77,20 +77,15 @@ def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
             )
             documents.append(doc)
         
-        # Node parser oluştur
-        parser = SimpleNodeParser.from_defaults()
-        nodes = parser.get_nodes_from_documents(documents)
-        
-        # Vector store oluştur
-        vector_store = FaissVectorStore.from_documents(
-            documents,
-            embed_model=Settings.embed_model
-        )
+        # FAISS vector store oluştur
+        vector_store = FaissVectorStore()
+        storage_context = StorageContext.from_defaults(vector_store=vector_store)
         
         # İndeks oluştur
-        index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            nodes=nodes
+        index = VectorStoreIndex.from_documents(
+            documents,
+            storage_context=storage_context,
+            show_progress=True
         )
         
         # İndeksi kaydet
