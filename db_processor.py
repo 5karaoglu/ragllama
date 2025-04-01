@@ -128,7 +128,7 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> Retri
         response_synthesizer = get_response_synthesizer(
             response_mode="tree_summarize",
             llm=llm,
-            system_prompt=system_prompt
+            service_context={"system_prompt": system_prompt}
         )
         
         # Query engine oluştur
