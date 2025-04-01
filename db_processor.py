@@ -165,7 +165,10 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
             # Insert data
             logger.debug("sqlite-utils ile veri ekleniyor...")
             db[table_name].insert_all(data_list)
-            logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi.")
+            # Explicitly commit the changes made via the sqlite3 connection
+            logger.debug("Değişiklikler commit ediliyor...")
+            conn.commit()
+            logger.info(f"{len(data_list)} kayıt '{table_name}' tablosuna başarıyla yüklendi ve commit edildi.")
             # Log columns for verification
             logger.debug(f"'{table_name}' tablosunun sütunları: {db[table_name].columns_dict}")
         except Exception as e:
