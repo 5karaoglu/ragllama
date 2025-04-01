@@ -61,9 +61,9 @@ def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") 
         if os.path.exists(index_path):
             logger.info(f"Mevcut PDF indeksi yükleniyor: {index_path}")
             # Storage context'i yükle
-            storage_context = StorageContext.load(persist_dir=index_path)
+            storage_context = StorageContext.from_defaults(persist_dir=index_path)
             # İndeksi storage context'ten yükle
-            return load_index_from_storage(storage_context)
+            return load_index_from_storage(storage_context=storage_context)
         
         # Yeni indeks oluştur
         logger.info("Yeni PDF indeksi oluşturuluyor...")
