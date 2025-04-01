@@ -68,10 +68,10 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
         nodes = parser.get_nodes_from_documents(documents)
         
         # Vector store oluştur
-        vector_store = FaissVectorStore.from_documents(
-            documents,
-            embed_model=Settings.embed_model
-        )
+        vector_store = FaissVectorStore()
+        
+        # Dökümanları vector store'a ekle
+        vector_store.add_nodes(nodes)
         
         # İndeks oluştur
         index = VectorStoreIndex.from_vector_store(
