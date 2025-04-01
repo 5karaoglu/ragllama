@@ -4,6 +4,7 @@ PDF işleme ve indeksleme için yardımcı fonksiyonlar.
 
 import os
 import logging
+import shutil
 from typing import List, Dict, Any
 from pathlib import Path
 import faiss
@@ -51,19 +52,35 @@ def extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
         logger.error(f"PDF'den metin çıkarılırken hata oluştu: {str(e)}")
         raise
 
+def clean_index_directory(index_path: str) -> None:
+    """İndeks dizinini temizler."""
+    try:
+        if os.path.exists(index_path):
+            logger.info(f"İndeks dizini temizleniyor: {index_path}")
+            shutil.rmtree(index_path)
+            logger.info("İndeks dizini başarıyla temizlendi")
+    except Exception as e:
+        logger.error(f"İndeks dizini temizlenirken hata oluştu: {str(e)}")
+        raise
+
 def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") -> VectorStoreIndex:
     """PDF indeksini oluşturur veya yükler."""
     try:
         # İndeks dosyasının yolu
         index_path = os.path.join(persist_dir, "pdf_index")
         
-        # İndeks zaten varsa yükle
+        # İndeks zaten varsa yüklemeyi dene
         if os.path.exists(index_path):
-            logger.info(f"Mevcut PDF indeksi yükleniyor: {index_path}")
-            # Storage context'i yükle
-            storage_context = StorageContext.from_defaults(persist_dir=index_path)
-            # İndeksi storage context'ten yükle
-            return load_index_from_storage(storage_context=storage_context)
+            try:
+                logger.info(f"Mevcut PDF indeksi yükleniyor: {index_path}")
+                # Storage context'i yükle
+                storage_context = StorageContext.from_defaults(persist_dir=index_path)
+                # İndeksi storage context'ten yükle
+                return load_index_from_storage(storage_context=storage_context)
+            except Exception as load_error:
+                logger.warning(f"İndeks yüklenirken hata oluştu, yeni indeks oluşturulacak: {str(load_error)}")
+                # Hata durumunda indeks dizinini temizle
+                clean_index_directory(index_path)
         
         # Yeni indeks oluştur
         logger.info("Yeni PDF indeksi oluşturuluyor...")
@@ -76,6 +93,10 @@ def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") 
 def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
     """PDF'den yeni bir indeks oluşturur."""
     try:
+        # İndeks dizinini temizle
+        index_path = os.path.join(persist_dir, "pdf_index")
+        clean_index_directory(index_path)
+        
         # PDF'den metin çıkar
         pages = extract_text_from_pdf(pdf_file)
         
@@ -110,7 +131,7 @@ def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
         )
         
         # İndeksi kaydet
-        index_path = os.path.join(persist_dir, "pdf_index")
+        os.makedirs(index_path, exist_ok=True)
         index.storage_context.persist(persist_dir=index_path)
         logger.info(f"PDF indeksi kaydedildi: {index_path}")
         
