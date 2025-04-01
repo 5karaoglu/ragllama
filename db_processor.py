@@ -114,15 +114,18 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> JSONa
         # JSON verilerini yükle
         json_data = load_json_data(json_file)
         
-        # QA Şablonunu oluştur (sistem prompt'u ile birlikte)
+        # QA Şablonunu oluştur (sistem prompt'u ve anahtar adı talimatı ile birlikte)
         qa_template_str = f"""{system_prompt}
 
-Aşağıdaki JSON verilerini kullanarak soruyu yanıtla:
+Aşağıdaki JSON verilerini kullanarak soruyu yanıtla. JSON verileri bir SQL tablosu olarak temsil edilmektedir. 
+SQL sorguları oluştururken, sütun adları olarak JSON'daki tam anahtar adlarını (örneğin, MuhasebeFisNumarası, FaturaNumarasi, CariHesapAdi) kullanmalısın.
+
+JSON Verisi (Bağlam):
 ---------------------
 {{context_str}}
 ---------------------
 Soru: {{query_str}}
-Yanıt:"""
+Yanıt (Gerekirse SQL sorgusu ile birlikte):"""
 
         # JSONalyzeQueryEngine oluştur (özelleştirilmiş QA şablonu ve list_of_dict ile)
         query_engine = JSONalyzeQueryEngine(
@@ -132,7 +135,7 @@ Yanıt:"""
             verbose=True
         )
         
-        logger.info("JSONalyzeQueryEngine başarıyla oluşturuldu (özel QA şablonu ile)")
+        logger.info("JSONalyzeQueryEngine başarıyla oluşturuldu (güncellenmiş QA şablonu ile)")
         return query_engine
         
     except Exception as e:
