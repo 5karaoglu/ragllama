@@ -63,13 +63,17 @@ def create_new_json_index(json_data: Dict[str, Any], persist_dir: str) -> Vector
                 text = f"Key: {key}\nValue: {value}\n"
             documents.append(Document(text=text))
         
+        # Node parser oluştur
+        parser = SimpleNodeParser.from_defaults()
+        nodes = parser.get_nodes_from_documents(documents)
+        
         # Vector store oluştur
         vector_store = FaissVectorStore()
         
         # İndeks oluştur
-        index = VectorStoreIndex.from_documents(
-            documents,
+        index = VectorStoreIndex.from_vector_store(
             vector_store=vector_store,
+            nodes=nodes,
             show_progress=True
         )
         
