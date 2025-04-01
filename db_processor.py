@@ -14,6 +14,7 @@ from llama_index.vector_stores.faiss import FaissVectorStore
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.response_synthesizers import get_response_synthesizer
 from sentence_transformers import SentenceTransformer
 import faiss
 
@@ -123,14 +124,17 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> Retri
             similarity_top_k=3
         )
         
+        # Response synthesizer oluştur
+        response_synthesizer = get_response_synthesizer(
+            response_mode="tree_summarize",
+            llm=llm,
+            system_prompt=system_prompt
+        )
+        
         # Query engine oluştur
         query_engine = RetrieverQueryEngine(
             retriever=retriever,
-            llm=llm,
-            system_prompt=system_prompt,
-            response_synthesizer_kwargs={
-                "response_mode": "tree_summarize"  # Yanıtları özetle
-            }
+            response_synthesizer=response_synthesizer
         )
         
         logger.info("Veritabanı sorgu motoru başarıyla oluşturuldu")
