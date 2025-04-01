@@ -172,8 +172,7 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
         # İsteğe bağlı: Şemayı logla
         try:
             table_info = sql_database.get_table_info([table_name])
-            logger.debug(f"Alınan tablo bilgisi:
-{table_info}")
+            logger.debug(f"Alınan tablo bilgisi:\n{table_info}")
         except Exception as e:
             logger.warning(f"Tablo bilgisi alınırken hata oluştu (devam ediliyor): {e}")
 
