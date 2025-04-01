@@ -9,7 +9,7 @@ from pathlib import Path
 from llama_index.core import VectorStoreIndex, Document, Settings
 from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SimpleNodeParser
-from llama_index.vector_stores.faiss import FaissVectorStore
+from llama_index.vector_stores.faiss.base import FaissVectorStore
 from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
