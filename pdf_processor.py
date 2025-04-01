@@ -4,97 +4,106 @@ PDF işleme ve indeksleme için yardımcı fonksiyonlar.
 
 import os
 import logging
-import PyPDF2
 from typing import List, Dict, Any
 from pathlib import Path
-from llama_index.core import (
-    Settings,
-    StorageContext,
-    load_index_from_storage,
-    VectorStoreIndex,
-    Document
-)
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.llms.base import LLM
+from llama_index.core import VectorStoreIndex, Document
+from llama_index.core.llms import LLM
+from llama_index.core.node_parser import SimpleNodeParser
+from llama_index.vector_stores.faiss import FaissVectorStore
+from llama_index.core.callbacks import CallbackManager, LlamaDebugHandler
+from llama_index.core import Settings
+from llama_index.retrievers import VectorIndexRetriever
+from llama_index.query_engine import RetrieverQueryEngine
 
 logger = logging.getLogger(__name__)
 
 def extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
-    """PDF dosyasından metin çıkartır."""
-    logger.info(f"'{file_path}' dosyasından metin çıkartılıyor...")
-    text_chunks = []
-    
+    """PDF dosyasından metin çıkarır."""
     try:
-        with open(file_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            for i, page in enumerate(reader.pages):
-                text = page.extract_text()
-                if text.strip():  # Boş sayfaları atla
-                    # Sayfa numarasını metne ekle
-                    chunk = {
-                        "content": text,
-                        "metadata": {
-                            "page": i + 1,
-                            "source": file_path
-                        }
-                    }
-                    text_chunks.append(chunk)
+        from PyPDF2 import PdfReader
+        logger.info(f"PDF dosyasından metin çıkarılıyor: {file_path}")
         
-        logger.info(f"PDF dosyasından {len(text_chunks)} sayfa metni çıkartıldı.")
-        return text_chunks
-    
+        reader = PdfReader(file_path)
+        pages = []
+        
+        for page_num in range(len(reader.pages)):
+            page = reader.pages[page_num]
+            text = page.extract_text()
+            pages.append({
+                "text": text,
+                "metadata": {
+                    "page_number": page_num + 1,
+                    "source": file_path
+                }
+            })
+        
+        logger.info(f"{len(pages)} sayfa başarıyla çıkarıldı")
+        return pages
+        
     except Exception as e:
-        logger.error(f"PDF metni çıkartılırken hata oluştu: {str(e)}")
+        logger.error(f"PDF'den metin çıkarılırken hata oluştu: {str(e)}")
         raise
 
 def create_or_load_pdf_index(pdf_file: str, persist_dir: str = "./pdf_storage") -> VectorStoreIndex:
-    """PDF verilerini işleyip indeks oluşturma veya yükleme işlemleri."""
-    # Dizin varsa yükle, yoksa oluştur
-    if os.path.exists(persist_dir) and os.path.exists(os.path.join(persist_dir, "docstore.json")):
-        logger.info(f"Mevcut PDF indeksi '{persist_dir}' konumundan yükleniyor...")
-        try:
-            storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
-            index = load_index_from_storage(storage_context)
-            logger.info("PDF indeksi başarıyla yüklendi.")
-            return index
-        except Exception as e:
-            logger.error(f"PDF indeksi yüklenirken hata oluştu: {str(e)}")
-            logger.info("Yeni PDF indeksi oluşturuluyor...")
-            # Hata durumunda yeni indeks oluştur
-            return create_new_pdf_index(pdf_file, persist_dir)
-    else:
+    """PDF indeksini oluşturur veya yükler."""
+    try:
+        # İndeks dosyasının yolu
+        index_path = os.path.join(persist_dir, "pdf_index")
+        
+        # İndeks zaten varsa yükle
+        if os.path.exists(index_path):
+            logger.info(f"Mevcut PDF indeksi yükleniyor: {index_path}")
+            return VectorStoreIndex.load(index_path)
+        
+        # Yeni indeks oluştur
         logger.info("Yeni PDF indeksi oluşturuluyor...")
         return create_new_pdf_index(pdf_file, persist_dir)
+        
+    except Exception as e:
+        logger.error(f"PDF indeksi oluşturulurken/yüklenirken hata oluştu: {str(e)}")
+        raise
 
 def create_new_pdf_index(pdf_file: str, persist_dir: str) -> VectorStoreIndex:
-    """Yeni bir PDF indeksi oluşturur."""
-    # PDF dosyasından metin çıkart
-    text_chunks = extract_text_from_pdf(pdf_file)
-    
-    # Belgeleri oluştur
-    documents = []
-    for chunk in text_chunks:
-        doc = Document(
-            text=chunk["content"],
-            metadata=chunk["metadata"]
+    """PDF'den yeni bir indeks oluşturur."""
+    try:
+        # PDF'den metin çıkar
+        pages = extract_text_from_pdf(pdf_file)
+        
+        # Document nesneleri oluştur
+        documents = []
+        for page in pages:
+            doc = Document(
+                text=page["text"],
+                metadata=page["metadata"]
+            )
+            documents.append(doc)
+        
+        # Node parser oluştur
+        parser = SimpleNodeParser.from_defaults()
+        nodes = parser.get_nodes_from_documents(documents)
+        
+        # Vector store oluştur
+        vector_store = FaissVectorStore.from_documents(
+            documents,
+            embed_model=Settings.embed_model
         )
-        documents.append(doc)
-    
-    logger.info(f"PDF'den {len(documents)} belge oluşturuldu.")
-    
-    # Vektör indeksi oluştur - embed_model parametresini açıkça belirt
-    index = VectorStoreIndex.from_documents(
-        documents,
-        embed_model=Settings.embed_model  # Global embed_model'i kullan
-    )
-    
-    # İndeksi kaydet
-    os.makedirs(persist_dir, exist_ok=True)
-    index.storage_context.persist(persist_dir=persist_dir)
-    
-    logger.info(f"PDF indeksi '{persist_dir}' konumuna kaydedildi.")
-    return index
+        
+        # İndeks oluştur
+        index = VectorStoreIndex.from_vector_store(
+            vector_store,
+            nodes=nodes
+        )
+        
+        # İndeksi kaydet
+        index_path = os.path.join(persist_dir, "pdf_index")
+        index.storage_context.persist(persist_dir=index_path)
+        logger.info(f"PDF indeksi kaydedildi: {index_path}")
+        
+        return index
+        
+    except Exception as e:
+        logger.error(f"Yeni PDF indeksi oluşturulurken hata oluştu: {str(e)}")
+        raise
 
 def setup_pdf_query_engine(pdf_file: str, llm: LLM, system_prompt: str) -> RetrieverQueryEngine:
     """PDF sorgu motorunu oluşturur."""
@@ -103,28 +112,26 @@ def setup_pdf_query_engine(pdf_file: str, llm: LLM, system_prompt: str) -> Retri
         if not os.path.exists(pdf_file):
             raise FileNotFoundError(f"PDF dosyası bulunamadı: {pdf_file}")
         
-        # PDF indeksini oluştur veya yükle
-        pdf_index = create_or_load_pdf_index(pdf_file)
+        # İndeksi oluştur veya yükle
+        index = create_or_load_pdf_index(pdf_file)
         
         # Retriever oluştur
         retriever = VectorIndexRetriever(
-            index=pdf_index,
-            similarity_top_k=3  # En benzer 3 belgeyi getir
+            index=index,
+            similarity_top_k=3
         )
         
-        # RetrieverQueryEngine oluştur
-        pdf_query_engine = RetrieverQueryEngine(
+        # Query engine oluştur
+        query_engine = RetrieverQueryEngine.from_defaults(
             retriever=retriever,
             llm=llm,
             system_prompt=system_prompt,
-            response_mode="tree_summarize",  # Yanıtları özetle
-            verbose=True
+            response_mode="tree_summarize"  # Yanıtları özetle
         )
         
-        logger.info("PDF sorgu motoru başarıyla oluşturuldu.")
-        return pdf_query_engine
+        logger.info("PDF sorgu motoru başarıyla oluşturuldu")
+        return query_engine
         
     except Exception as e:
-        logger.error(f"PDF sorgu motoru oluşturulurken hata: {str(e)}")
-        logger.exception("Hata detayları:")
+        logger.error(f"PDF sorgu motoru oluşturulurken hata oluştu: {str(e)}")
         raise 
