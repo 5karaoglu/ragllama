@@ -36,6 +36,9 @@ services:
             - driver: nvidia
               device_ids: ['0', '1']  # İlk iki GPU'yu kullan (indeks 0 ve 1)
               capabilities: [gpu, utility, compute]  # Tüm GPU yeteneklerini etkinleştir
+    tmpfs:
+      - /tmp:size=10G  # /tmp dizinine 10GB alan ayır
+    shm_size: '10gb'  # Shared memory boyutunu artır
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
       interval: 60s  # Kontrol aralığını artır
