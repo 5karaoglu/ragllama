@@ -273,15 +273,55 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
             logger.error("LLM yanıtından geçerli SQL sorgusu ayıklanamadı.")
             return f"Üzgünüm, sorgunuzu SQL'e çeviremedim. LLM yanıtı: {raw_sql_response}"
         logger.info(f"Ayıklanan SQL sorgusu çalıştırılıyor: {clean_sql}")
+        sql_result_str: str | None = None # Initialize
         try:
-            sql_result = sql_database.run_sql(clean_sql)
+            # Use sql_database.run_sql for direct execution
+            sql_result_raw = sql_database.run_sql(clean_sql)
+            # Convert result to string, handle potential non-string results if necessary
+            sql_result_str = str(sql_result_raw)
             logger.info("SQL sorgu sonucu başarıyla alındı.")
-            logger.debug(f"SQL Sonucu: {sql_result}")
-            return str(sql_result)
+            logger.debug(f"SQL Sonucu (Ham): {sql_result_str}")
+            
         except Exception as sql_exec_error:
             logger.error(f"SQL sorgusu çalıştırılırken hata oluştu: {clean_sql}, Hata: {sql_exec_error}", exc_info=True)
+            # Return the error message directly
             return f"SQL sorgusu ({clean_sql}) çalıştırılırken bir hata oluştu: {sql_exec_error}"
+
+        # --- 6. Synthesize Final Answer using LLM --- 
+        if sql_result_str is not None: # Proceed only if SQL execution was successful
+            logger.info("SQL sonucu kullanılarak nihai yanıt LLM ile sentezleniyor...")
             
+            synthesis_prompt_str = (
+                "Orijinal Soru: {user_query}\n"
+                "Veritabanı Sorgu Sonucu:\n"
+                "---------------------\n"
+                "{sql_result}\n"
+                "---------------------\n"
+                "Yukarıdaki veritabanı sorgu sonucunu kullanarak orijinal soruyu doğal dilde yanıtla.\n"
+                "Yanıt: "
+            )
+            synthesis_prompt = PromptTemplate(template=synthesis_prompt_str)
+            formatted_synthesis_prompt = synthesis_prompt.format(
+                user_query=user_query,
+                sql_result=sql_result_str
+            )
+            logger.debug(f"Yanıt sentezleme için LLM'e gönderilecek prompt:\n{formatted_synthesis_prompt}")
+
+            try:
+                final_response = llm.complete(formatted_synthesis_prompt)
+                final_answer = final_response.text
+                logger.info("Nihai yanıt LLM'den başarıyla alındı.")
+                logger.debug(f"Sentezlenmiş Yanıt: {final_answer}")
+                return final_answer
+            except Exception as synthesis_error:
+                logger.error(f"Nihai yanıt sentezlenirken LLM hatası oluştu: {synthesis_error}", exc_info=True)
+                # Fallback: return the raw SQL result if synthesis fails
+                return f"Yanıt sentezlenirken bir hata oluştu. Ham SQL sonucu: {sql_result_str}"
+        else:
+            # This case should ideally not be reached if SQL execution error is returned above
+            logger.error("SQL sonucu alınamadığı için yanıt sentezlenemedi.")
+            return "SQL sorgusu çalıştırıldı ancak sonuç alınamadı."
+
     except Exception as e:
         logger.error(f"Doğal dil sorgusu işlenirken genel hata: {e}", exc_info=True)
         return f"Sorgunuz işlenirken beklenmedik bir hata oluştu: {e}"
