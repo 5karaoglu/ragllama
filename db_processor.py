@@ -102,23 +102,19 @@ def filter_llm_response_for_sql(llm_response: str) -> str:
         return ""
 
     try:
-        # SELECT ile başlayıp ; ile biten **son** ifadeyi ara
-        # (?is) -> case-insensitive, dotall flags
-        # .*    -> match anything greedily (pushes towards the end)
-        # (SELECT.*?;) -> capture the SELECT ... ; block non-greedily
-        # \\s*   -> match trailing whitespace
-        # $     -> anchor to the end of the string
-        match = re.search(r"(?is).*(SELECT.*?;)\\s*$", llm_response)
+        # SELECT ile başlayıp ; ile biten TÜM ifadeleri bul (case-insensitive, dotall)
+        # \bSELECT\b -> Tam "SELECT" kelimesini eşleştir
+        matches = re.findall(r"(?is)(\bSELECT\b.*?;)", llm_response)
 
-        if match:
-            # Capture group 1 contains the SQL
-            sql = match.group(1).strip() 
+        if matches:
+            # Bulunan son eşleşmeyi al
+            sql = matches[-1].strip()
             # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle (ekstra güvenlik)
             sql = re.sub(r"^```sql\\s*|\\s*```$", "", sql, flags=re.IGNORECASE).strip()
-            logger.debug(f"Regex ile ayıklanan SQL: {sql}")
+            logger.debug(f"Regex (findall) ile ayıklanan SQL: {sql}")
             return sql
-        else: 
-            logger.warning(f"Yanıt içinde sondaki 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Yanıt: {llm_response[:500]}...") # Log a snippet
+        else:
+            logger.warning(f"Yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı (findall). Yanıt: {llm_response[:500]}...")
             return ""
 
     except Exception as e:
