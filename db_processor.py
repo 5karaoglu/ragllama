@@ -5,6 +5,7 @@ Veritabanı işlemleri için yardımcı fonksiyonlar.
 import os
 import json
 import logging
+import re
 from typing import Dict, Any, List
 from pathlib import Path
 
@@ -95,38 +96,38 @@ def load_json_data(file_path: str) -> Dict[str, Any]:
 #         raise
 
 def filter_llm_response_for_sql(llm_response: str) -> str:
-    """LLM yanıtından SQL sorgusunu çıkarır (NLSQLTableQueryEngine bunu genellikle kendi yönetir)."""
-    try:
-        sql_match = None
-        if "```sql" in llm_response:
-            sql_match = llm_response.split("```sql")[1].split("```")[0].strip()
-        elif "SELECT " in llm_response and ";" in llm_response:
-             start = llm_response.find("SELECT ")
-             end = llm_response.find(";", start)
-             if start != -1 and end != -1:
-                 sql_match = llm_response[start:end+1].strip()
+    """LLM yanıtından ilk geçerli SQL SELECT ifadesini regex kullanarak çıkarır."""
+    if not llm_response or not isinstance(llm_response, str):
+        logger.warning("filter_llm_response_for_sql: Geçersiz veya boş yanıt alındı.")
+        return ""
 
-        if sql_match:
-             sql = sql_match.replace("```", "").strip()
-             sql = sql.split(';')[0].strip() + ';'
-             if sql.endswith((".", "!", "?", ";;")):
-                  sql = sql[:-1].strip()
-                  if not sql.endswith(';'):
-                      sql += ';'
-             logger.debug(f"Ayıklanan SQL: {sql}")
-             return sql
-        else:
-             logger.warning("Yanıt içinde SQL sorgusu bulunamadı.")
-             return ""
+    try:
+        # SELECT ile başlayıp ; ile biten ilk ifadeyi ara (case-insensitive SELECT)
+        # .*? -> non-greedy match for anything between SELECT and ;
+        # re.DOTALL -> . karakterinin newline dahil her şeyi eşlemesini sağlar
+        # re.IGNORECASE -> SELECT ifadesini büyük/küçük harf duyarsız arar
+        # Corrected regex string literal and flags
+        match = re.search(r"SELECT.*?\;", llm_response, re.IGNORECASE | re.DOTALL)
+
+        if match:
+            sql = match.group(0).strip()
+            # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle (ekstra güvenlik)
+            # Corrected regex string literal for cleaning
+            sql = re.sub(r"^```sql\s*|\s*```$", "", sql, flags=re.IGNORECASE).strip()
+            logger.debug(f"Regex ile ayıklanan SQL: {sql}")
+            return sql
+        else: # Corrected indentation/placement if needed, or just ensure it's correct
+            logger.warning(f"Yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Yanıt: {llm_response[:500]}...") # Log a snippet
+            return ""
 
     except Exception as e:
-        logger.error(f"SQL sorgusu çıkarılırken hata oluştu: {str(e)}")
+        logger.error(f"SQL sorgusu regex ile çıkarılırken hata oluştu: {str(e)}")
         return ""
 
 # --- Rewritten setup_db_query_engine using SQLAlchemy exclusively ---
-def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQLTableQueryEngine:
-    """Veritabanı sorgu motorunu NLSQLTableQueryEngine kullanarak oluşturur (SQLAlchemy ile)."""
-    logger.info(f"NLSQLTableQueryEngine için kurulum başlatılıyor (SQLAlchemy): {json_file}")
+def setup_db_query_engine(json_file: str) -> SQLDatabase:
+    """JSON verisini yükler, SQLAlchemy ile in-memory DB oluşturur ve SQLDatabase nesnesini döndürür."""
+    logger.info(f"SQLDatabase kurulumu başlatılıyor (SQLAlchemy): {json_file}")
     try:
         # --- 1. JSON Verisini Yükle ve Hazırla ---
         json_key = "Sheet1"
@@ -196,23 +197,43 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
             logger.error(f"SQLAlchemy ile veri yüklenirken hata: {e}", exc_info=True)
             raise
 
-        # --- 6. LlamaIndex SQLDatabase Nesnesi Oluştur ---
+        # --- 6. LlamaIndex SQLDatabase Nesnesi Oluştur ve Döndür ---
         logger.debug("LlamaIndex SQLDatabase nesnesi oluşturuluyor...")
         sql_database = SQLDatabase(engine, include_tables=[table_name])
-        logger.info(f"SQLDatabase nesnesi '{table_name}' tablosu için oluşturuldu.")
+        logger.info(f"SQLDatabase nesnesi '{table_name}' tablosu için başarıyla oluşturuldu ve döndürülüyor.")
+        # Optional: Log schema info (already present)
         try:
             table_info = sql_database.get_table_info([table_name])
             logger.debug(f"Alınan tablo bilgisi:\n{table_info}")
         except Exception as e:
             logger.warning(f"Tablo bilgisi alınırken hata oluştu (devam ediliyor): {e}")
+            
+        return sql_database # Return the SQLDatabase object
 
-        # --- 7. NLSQLTableQueryEngine Oluştur ---
-        logger.debug("NLSQLTableQueryEngine oluşturuluyor...")
+    except Exception as e:
+        # Adjusted error message to reflect function's new purpose
+        logger.error(f"SQLDatabase kurulumunda genel hata: {e}", exc_info=True)
+        raise 
 
-        # Özel Text-to-SQL Prompt Şablonu (Tam sütun adlarını kullanmaya zorla)
+# --- New Function for Direct SQL Execution ---
+def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_query: str) -> str:
+    """Doğal dil sorgusunu alır, LLM ile SQL'e çevirir, filtreler ve SQLDatabase üzerinde çalıştırır."""
+    logger.info(f"Doğal dil sorgusu alınıyor: {user_query}")
+
+    try:
+        # --- 1. Get Table Schema --- 
+        if not sql_database.get_usable_table_names():
+            raise ValueError("SQLDatabase içinde kullanılabilir tablo bulunamadı.")
+        table_name = list(sql_database.get_usable_table_names())[0]
+        logger.debug(f"Kullanılacak tablo: {table_name}")
+
+        context = sql_database.get_table_context([table_name])
+        logger.debug(f"Alınan tablo bağlamı (şema vb.):\n{context}") # Removed extra newline here if problematic
+
+        # --- 2. Create SQL Generation Prompt --- 
         custom_sql_prompt_str = (
             "Verilen bir girdi sorusu için, önce çalıştırılacak sözdizimsel olarak doğru bir {dialect} "
-            "sorgusu oluştur, ardından sorgunun sonuçlarına bak ve yanıtı döndür.\n"
+            "sorgusu oluştur.\n"
             "Doğru sütun adlarını kullanmak için aşağıda sağlanan tablo şemasını KULLANMALISIN.\n"
             "Şemada sağlanan TAM sütun adlarına (büyük/küçük harf dahil) ÇOK DİKKAT ET.\n"
             "Sütun adlarını snake_case veya başka bir formata dönüştürme. Tam adları kullan.\n"
@@ -221,20 +242,47 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
             "{schema}\n"
             "---------------------\n"
             "Soru: {query_str}\n"
+            # Corrected the final line with proper closing for the multi-line string literal
             "SQL Sorgusu (YALNIZCA tek bir geçerli SQL SELECT ifadesi yaz, başına veya sonuna başka HİÇBİR metin veya yorum EKLEME): "
         )
-        custom_text_to_sql_prompt = PromptTemplate(custom_sql_prompt_str)
+        sql_generation_prompt = PromptTemplate(template=custom_sql_prompt_str) # Use template= kwarg
 
-        query_engine = NLSQLTableQueryEngine(
-            sql_database=sql_database,
-            tables=[table_name],
-            llm=llm,
-            text_to_sql_prompt=custom_text_to_sql_prompt,
-            verbose=True
+        dialect = sql_database.dialect.name
+        formatted_prompt = sql_generation_prompt.format(
+            dialect=dialect, 
+            schema=context, 
+            query_str=user_query
         )
-        logger.info("NLSQLTableQueryEngine başarıyla oluşturuldu (SQLAlchemy tabanlı, özel prompt ile).")
-        return query_engine
+        logger.debug(f"SQL üretimi için LLM'e gönderilecek prompt:\n{formatted_prompt}")
+
+        # --- 3. Call LLM to Generate SQL --- 
+        logger.info("SQL sorgusu üretmek için LLM çağrılıyor...")
+        llm_response = llm.complete(formatted_prompt)
+        raw_sql_response = llm_response.text
+        logger.debug(f"LLM'den ham SQL yanıtı alındı:\n{raw_sql_response}")
+
+        # --- 4. Filter the Response to Get Clean SQL --- 
+        logger.info("LLM yanıtından SQL sorgusu ayıklanıyor...")
+        clean_sql = filter_llm_response_for_sql(raw_sql_response)
+
+        if not clean_sql:
+            logger.error("LLM yanıtından geçerli SQL sorgusu ayıklanamadı.")
+            return f"Üzgünüm, sorgunuzu SQL'e çeviremedim. LLM yanıtı: {raw_sql_response}"
+
+        # --- 5. Execute the SQL Query --- 
+        logger.info(f"Ayıklanan SQL sorgusu çalıştırılıyor: {clean_sql}")
+        try:
+            sql_result = sql_database.run_sql(clean_sql)
+            logger.info("SQL sorgu sonucu başarıyla alındı.")
+            logger.debug(f"SQL Sonucu: {sql_result}")
+            return str(sql_result) # Ensure result is string
+        except Exception as sql_exec_error:
+            logger.error(f"SQL sorgusu çalıştırılırken hata oluştu: {clean_sql}, Hata: {sql_exec_error}", exc_info=True)
+            return f"SQL sorgusu ({clean_sql}) çalıştırılırken bir hata oluştu: {sql_exec_error}" # Include SQL in error
 
     except Exception as e:
-        logger.error(f"NLSQLTableQueryEngine kurulumunda genel hata: {e}", exc_info=True)
-        raise 
+        logger.error(f"Doğal dil sorgusu işlenirken genel hata: {e}", exc_info=True)
+        return f"Sorgunuz işlenirken beklenmedik bir hata oluştu: {e}"
+
+
+# --- setup_db_query_engine remains the same, returning SQLDatabase --- 

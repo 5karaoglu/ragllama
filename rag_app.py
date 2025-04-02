@@ -29,7 +29,8 @@ from api import setup_routes
 app = Flask(__name__)
 
 # Global değişkenler
-db_query_engine = None
+sql_database = None
+global_llm = None
 pdf_query_engine = None
 llama_debug_handler = None
 
@@ -195,7 +196,7 @@ def setup_embedding_model():
 # Uygulama başlatma
 def initialize_app():
     """Uygulamayı başlatır ve gerekli bileşenleri yükler."""
-    global db_query_engine, pdf_query_engine
+    global sql_database, global_llm, pdf_query_engine
     
     logger.info("RAG uygulaması başlatılıyor...")
     
@@ -204,21 +205,26 @@ def initialize_app():
     
     # Modelleri yapılandır
     llm = setup_llm()
+    global_llm = llm
     embed_model = setup_embedding_model()
     
     # Global ayarları yapılandır
-    Settings.llm = llm
     Settings.embed_model = embed_model
     logger.info("Embedding modeli global ayarlara atandı.")
     
-    # DB sorgu motorunu oluştur
-    db_query_engine = setup_db_query_engine("Book1.json", llm, get_system_prompt('db'))
+    # DB SQLDatabase nesnesini oluştur
+    logger.info("DB SQLDatabase nesnesi oluşturuluyor...")
+    sql_database = setup_db_query_engine("Book1.json")
+    logger.info("DB SQLDatabase nesnesi başarıyla oluşturuldu.")
     
     # PDF sorgu motorunu oluştur
-    pdf_query_engine = setup_pdf_query_engine("document.pdf", llm, get_system_prompt('pdf'))
+    logger.info("PDF sorgu motoru oluşturuluyor...")
+    pdf_query_engine = setup_pdf_query_engine("document.pdf", global_llm, get_system_prompt('pdf'))
+    logger.info("PDF sorgu motoru başarıyla oluşturuldu.")
     
     # API rotalarını ayarla
-    setup_routes(app, db_query_engine, pdf_query_engine, llama_debug_handler)
+    setup_routes(app, pdf_query_engine, llama_debug_handler)
+    logger.info("API Rotaları ayarlandı.")
     
     logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
     return True

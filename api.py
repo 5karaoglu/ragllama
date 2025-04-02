@@ -5,18 +5,26 @@ API endpoint'leri için Flask rotaları.
 import logging
 from typing import Dict, Any, List
 from flask import Flask, request, jsonify
-from llama_index.core.callbacks import CallbackManager
-import types
+# Removed CallbackManager, types - no longer needed here for DB part
+
+# Import the execution function and potentially the globals from rag_app
+from db_processor import execute_natural_language_query
+# Attempt to import globals from rag_app (adjust path if needed)
+try:
+    from rag_app import sql_database, global_llm
+except ImportError:
+    sql_database = None
+    global_llm = None
+    logging.warning("Could not import globals from rag_app directly in api.py")
 
 logger = logging.getLogger(__name__)
 
-def setup_routes(app: Flask, db_query_engine, pdf_query_engine, llama_debug_handler):
+def setup_routes(app: Flask, pdf_query_engine, llama_debug_handler):
     """
     Flask uygulamasına API rotalarını ekler.
     
     Args:
         app: Flask uygulaması
-        db_query_engine: Veritabanı sorgu motoru
         pdf_query_engine: PDF sorgu motoru
         llama_debug_handler: LLM debug handler'ı
     """
@@ -24,9 +32,10 @@ def setup_routes(app: Flask, db_query_engine, pdf_query_engine, llama_debug_hand
     @app.route('/api/status', methods=['GET'])
     def status():
         """API durumunu kontrol eder."""
+        is_sql_db_ready = sql_database is not None
         return jsonify({
             "status": "online",
-            "db_query_engine_ready": db_query_engine is not None,
+            "sql_database_ready": is_sql_db_ready,
             "pdf_query_engine_ready": pdf_query_engine is not None
         })
 
@@ -36,55 +45,34 @@ def setup_routes(app: Flask, db_query_engine, pdf_query_engine, llama_debug_hand
         try:
             data = request.json
             user_query = data.get('query')
-            module = data.get('module', 'db')  # Varsayılan olarak 'db' kullan
-            show_thoughts = data.get('show_thoughts', True)  # Düşünce sürecini gösterme seçeneği
+            module = data.get('module', 'db')
+            show_thoughts = data.get('show_thoughts', True)
             
             if not user_query:
                 return jsonify({"error": "Sorgu parametresi gerekli"}), 400
             
-            # Sorgu öncesi event loglarını temizle
             if llama_debug_handler:
                 llama_debug_handler.flush_event_logs()
                 logger.info("Sorgu öncesi debug handler event logları temizlendi.")
             
-            # Modüle göre sorguyu işle
             thought_process = []
             llm_response = None
             
+            # Access globals for DB query
+            current_sql_db = sql_database
+            current_llm = global_llm
+            
             if module == 'db':
-                if db_query_engine is None:
-                    return jsonify({"error": "DB query engine henüz hazır değil"}), 503
+                if current_sql_db is None or current_llm is None:
+                    return jsonify({"error": "Veritabanı veya LLM modülü henüz hazır değil"}), 503
                     
                 logger.info(f"DB modülü ile soru işleniyor: {user_query}")
                 
-                # JSONalyzeQueryEngine sorgularını gözlemleme
-                original_query = db_query_engine.query
-                
-                def logging_query_wrapper(self, query_str, **kwargs):
-                    logger.info(f"LLM'e gönderilen sorgu: {query_str}")
-                    response = original_query(query_str, **kwargs)
-                    
-                    # SQL kodunu ve LLM'in düşüncelerini logla
-                    try:
-                        if hasattr(response, 'metadata') and response.metadata is not None:
-                            if 'sql_query' in response.metadata:
-                                logger.info(f"ÜRETİLEN SQL SORGUSU: {response.metadata['sql_query']}")
-                            if 'result' in response.metadata:
-                                logger.info(f"SQL SORGU SONUCU: {response.metadata['result']}")
-                    except Exception as log_error:
-                        logger.error(f"Yanıt log hatası: {str(log_error)}")
-                    
-                    return response
-                
-                # Orijinal query fonksiyonunu geçici olarak değiştir
-                db_query_engine.query = types.MethodType(logging_query_wrapper, db_query_engine)
-                
-                # Sorguyu çalıştır
-                response = db_query_engine.query(user_query)
-                llm_response = str(response)
-                
-                # Fonksiyonu eski haline getir
-                db_query_engine.query = original_query
+                llm_response = execute_natural_language_query(
+                    sql_database=current_sql_db,
+                    llm=current_llm,
+                    user_query=user_query
+                )
                 
             elif module == 'pdf':
                 if pdf_query_engine is None:
