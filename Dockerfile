@@ -48,5 +48,5 @@ RUN mkdir -p model_cache embedding_cache storage pdf_storage
 EXPOSE 5000
 
 # Çalışma komutu (Gunicorn + Eventlet ile)
-CMD ["gunicorn", "-k", "eventlet", "-w", "1", "-b", "0.0.0.0:5000", "rag_app:app"]
+CMD ["gunicorn", "-k", "eventlet", "-w", "1", "-b", "0.0.0.0:5000", "--timeout", "120", "rag_app:app"]
 # Eski CMD: CMD ["python", "rag_app.py"] 
