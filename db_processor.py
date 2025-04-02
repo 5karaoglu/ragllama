@@ -254,7 +254,9 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
             "SQL Sorgusu (YALNIZCA tek bir geçerli SQL SELECT ifadesi yaz, başına veya sonuna başka HİÇBİR metin veya yorum EKLEME): "
         )
         sql_generation_prompt = PromptTemplate(template=custom_sql_prompt_str)
-        dialect = sql_database.dialect.name
+
+        # Access dialect name via the engine attribute
+        dialect = sql_database.engine.dialect.name
         formatted_prompt = sql_generation_prompt.format(
             dialect=dialect, 
             schema=context, 
