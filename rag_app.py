@@ -29,17 +29,8 @@ from api import setup_routes
 from websockets import initialize_websockets
 from system_monitor import shutdown_pynvml
 
-# Flask uygulaması
-app = Flask(__name__)
-socketio = None
-
-# Global değişkenler
-sql_database = None
-global_llm = None
-pdf_query_engine = None
-llama_debug_handler = None
-
-# Loglama yapılandırması
+# --- Loglama Yapılandırması ---
+# Loglamayı erken başlat ki her adım loglanabilsin
 def setup_logging():
     handler = colorlog.StreamHandler()
     handler.setFormatter(
@@ -57,30 +48,32 @@ def setup_logging():
     )
     
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)  # DEBUG seviyesine değiştirdik
+    # Gunicorn/Eventlet daha fazla log üretebileceği için seviyeyi INFO'ya çekebiliriz
+    # Gerekirse debug için tekrar DEBUG yapılabilir.
+    logger.setLevel(logging.INFO) 
     logger.addHandler(handler)
     
     # Diğer kütüphanelerin loglarını azalt
     logging.getLogger("transformers").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("pynvml").setLevel(logging.INFO) # pynvml loglarını görelim
     
     return logger
 
 logger = setup_logging()
 
-# LlamaDebugHandler kurulumu
+# --- LlamaDebugHandler Kurulumu ---
+# Bunu globalde tutmak yerine, setup içinde oluşturup Settings'e atayabiliriz.
+llama_debug_handler = None
 def setup_debug_handler():
     global llama_debug_handler
-    # Yeni bir LlamaDebugHandler oluştur
     llama_debug_handler = LlamaDebugHandler(print_trace_on_end=False)
-    # CallbackManager ile entegre et
     callback_manager = CallbackManager([llama_debug_handler])
-    # Global Settings'e ata
     Settings.callback_manager = callback_manager
     logger.info("LlamaDebugHandler başarıyla kuruldu.")
-    return llama_debug_handler
+    # Handler'ı döndürmeye gerek yok, global Settings'e atandı.
 
-# Model yapılandırması
+# --- Model Yapılandırması ---
 def setup_llm():
     logger.info("DeepSeek-R1-Distill-Qwen-14B-unsloth-bnb-4bit modeli yapılandırılıyor...")
     
@@ -198,66 +191,76 @@ def setup_embedding_model():
         logger.error(f"Embedding modeli yüklenirken hata oluştu: {str(e)}")
         raise
 
-# Uygulama başlatma
-def initialize_app():
-    """Uygulamayı başlatır ve gerekli bileşenleri yükler."""
-    global sql_database, global_llm, pdf_query_engine, socketio
-    
-    logger.info("RAG uygulaması başlatılıyor...")
-    
-    # SocketIO'yu başlat (Flask app'i sarmalayarak)
-    socketio = initialize_websockets(app)
-    logger.info("WebSocket arayüzü başarıyla başlatıldı.")
+# --- Flask Uygulaması ve SocketIO Başlatma (Modül Seviyesi) ---
+app = Flask(__name__)
+socketio = initialize_websockets(app) # SocketIO'yu app ile hemen başlat
+logger.info("Flask app ve SocketIO modül seviyesinde başlatıldı.")
 
-    # pynvml'yi uygulama kapanırken kapatmak için kaydet
-    atexit.register(shutdown_pynvml)
-    logger.info("pynvml kapatma fonksiyonu atexit ile kaydedildi.")
+# --- pynvml Kapanışını Kaydet ---
+atexit.register(shutdown_pynvml)
+logger.info("pynvml kapatma fonksiyonu atexit ile modül seviyesinde kaydedildi.")
 
-    # Debug handler'ı kur
-    setup_debug_handler()
-    
-    # Modelleri yapılandır ve app nesnesine ekle
+# --- Uygulama Kurulumu (Modül Seviyesi - Gunicorn Import Ettiğinde Çalışacak) ---
+logger.info("RAG uygulaması kurulumu başlatılıyor (modül seviyesi)...")
+
+# Global değişkenler (Engine'leri tutmak için)
+sql_database = None
+pdf_query_engine = None
+
+try:
+    # Debug Handler
+    setup_debug_handler() # Global llama_debug_handler'ı ayarlar
+
+    # LLM
     logger.info("LLM yapılandırılıyor...")
     llm = setup_llm()
-    app.llm = llm
+    app.llm = llm # app context'ine ekle
     logger.info("LLM başarıyla yapılandırıldı ve app nesnesine eklendi.")
-    
+
+    # Embedding Modeli
     logger.info("Embedding modeli yapılandırılıyor...")
     embed_model = setup_embedding_model()
     logger.info("Embedding modeli başarıyla yapılandırıldı.")
 
-    # Global ayarları yapılandır
-    Settings.llm = app.llm
+    # Global Ayarlar
+    Settings.llm = app.llm # veya llm değişkeni
     Settings.embed_model = embed_model
     logger.info("LLM ve Embedding modeli global ayarlara atandı.")
 
-    # DB SQLDatabase nesnesini oluştur ve app nesnesine ekle
+    # DB SQLDatabase
     logger.info("DB SQLDatabase nesnesi oluşturuluyor...")
-    sql_db = setup_db_query_engine("Book1.json")
-    app.sql_database = sql_db
+    # setup_db_query_engine şimdi doğrudan SQLDatabase nesnesini döndürüyor
+    sql_db_instance = setup_db_query_engine("Book1.json") 
+    app.sql_database = sql_db_instance # app context'ine ekle
+    # Global sql_database değişkenini artık kullanmaya gerek kalmayabilir, her şey app context'inde
     logger.info("DB SQLDatabase nesnesi başarıyla oluşturuldu ve app nesnesine eklendi.")
 
-    # PDF sorgu motorunu oluştur (app nesnesinden LLM'i kullanarak)
+    # PDF Sorgu Motoru
     logger.info("PDF sorgu motoru oluşturuluyor...")
-    pdf_query_engine = setup_pdf_query_engine("document.pdf", app.llm, get_system_prompt('pdf'))
+    # pdf_query_engine global değişkenine ata veya doğrudan setup_routes'a geç
+    pdf_query_engine_instance = setup_pdf_query_engine("document.pdf", app.llm, get_system_prompt('pdf'))
+    pdf_query_engine = pdf_query_engine_instance # API rotaları için globalde tutalım
     logger.info("PDF sorgu motoru başarıyla oluşturuldu.")
-    
-    # API rotalarını ayarla (SocketIO'dan *sonra* yapılmalı)
+
+    # API Rotaları (app, engine'ler ve handler ile)
+    # llama_debug_handler globalde ayarlandı, onu kullanabiliriz
     setup_routes(app, pdf_query_engine, llama_debug_handler)
     logger.info("API Rotaları ayarlandı.")
-    
-    logger.info("RAG uygulaması başarıyla başlatıldı ve API/WebSocket hazır.")
-    return True
 
+    logger.info("RAG uygulaması kurulumu başarıyla tamamlandı (modül seviyesi).")
+
+except Exception as e:
+    logger.critical(f"Uygulama kurulumu sırasında kritik hata: {e}", exc_info=True)
+    # Hata durumunda uygulamanın başlamasını engellemek gerekebilir.
+    # Gunicorn bu durumda worker'ı yeniden başlatmaya çalışabilir.
+    raise # Hatayı tekrar yükselt ki Gunicorn fark etsin
+
+
+# --- Ana Çalıştırma Bloğu (Sadece doğrudan çalıştırma için) ---
+# Gunicorn kullanırken bu blok çalışmayacak
 if __name__ == "__main__":
-    # Uygulamayı başlat
-    success = initialize_app()
-    
-    if success and socketio:
-        # Flask uygulamasını SocketIO sunucusu üzerinden başlat
-        logger.info("SocketIO sunucusu başlatılıyor...")
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
-    elif success:
-        logger.error("SocketIO başlatılamadı, uygulama normal Flask ile çalıştırılamıyor.")
-    else:
-        logger.error("Uygulama başlatılamadı") 
+    logger.warning("Uygulama doğrudan `python rag_app.py` ile çalıştırılıyor.")
+    logger.warning("Production için Gunicorn kullanılması önerilir.")
+    # SocketIO geliştirme sunucusunu başlat
+    # debug=True loglamayı artırabilir ve otomatik yeniden yükleme sağlayabilir
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True) 
