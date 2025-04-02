@@ -221,7 +221,7 @@ def setup_db_query_engine(json_file: str, llm: LLM, system_prompt: str) -> NLSQL
             "{schema}\n"
             "---------------------\n"
             "Soru: {query_str}\n"
-            "SQL Sorgusu: "
+            "SQL Sorgusu (YALNIZCA tek bir geçerli SQL SELECT ifadesi yaz, başına veya sonuna başka HİÇBİR metin veya yorum EKLEME): "
         )
         custom_text_to_sql_prompt = PromptTemplate(custom_sql_prompt_str)
 
