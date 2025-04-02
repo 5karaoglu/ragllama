@@ -36,6 +36,8 @@ COPY api.py .
 COPY db_processor.py .
 COPY pdf_processor.py .
 COPY prompts.py .
+COPY system_monitor.py .
+COPY websockets.py .
 COPY Book1.json .
 COPY document.pdf .
 
