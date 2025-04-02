@@ -115,20 +115,35 @@ def filter_llm_response_for_sql(llm_response: str) -> str:
         else:
             logger.debug("'</think>' etiketi bulunamadı, orijinal yanıt kullanılıyor.")
 
-        # Temizlenmiş yanıtta ilk SELECT ... ; ifadesini ara
+        # Temizlenmiş yanıtta ilk SELECT ... ; ifadesini ara, olası kod bloklarını da dikkate al
         # (?is) -> case-insensitive, dotall
-        match = re.search(r"(?is)(\bSELECT\b.*?;)", cleaned_response)
+        # \s* -> başında olabilecek boşluklar
+        # (?:```sql\s*)? -> Opsiyonel ```sql başlangıcı (yakalama yapma)
+        # (\bSELECT\b.*?;) -> Asıl SQL ifadesini yakala (Grup 1)
+        # \s* -> arada olabilecek boşluklar
+        # (?:```)? -> Opsiyonel ``` bitişi (yakalama yapma)
+        # \s*$ -> sonda olabilecek boşluklar ve satır sonu
+        match = re.search(r"(?is)\s*(?:```sql\s*)?(\bSELECT\b.*?;)\s*(?:```)?\s*$", cleaned_response)
 
         if match:
-            # İlk yakalanan grup (tüm SELECT ifadesi)
+            # Asıl SQL ifadesi Grup 1'de
             sql = match.group(1).strip()
-            # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle
-            sql = re.sub(r"^```sql\\s*|\\s*```$", "", sql, flags=re.IGNORECASE).strip()
-            logger.debug(f"Temizlenmiş yanıttan regex ile ayıklanan SQL: {sql}")
+            # Tekrar temizlemeye gerek yok, regex zaten sadece SQL'i yakalamalı
+            logger.debug(f"Temizlenmiş yanıttan (kod bloğu temizlenerek) regex ile ayıklanan SQL: {sql}")
             return sql
         else:
-            logger.warning(f"Temizlenmiş yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Temizlenmiş Yanıt Başlangıcı: {cleaned_response[:500]}...")
-            return ""
+            # Eğer yukarıdaki regex eşleşmezse, kod blokları olmadan basit aramayı tekrar dene
+            logger.debug("Kod bloğu içeren regex eşleşmedi, basit SELECT araması deneniyor...")
+            match_simple = re.search(r"(?is)(\bSELECT\b.*?;)", cleaned_response)
+            if match_simple:
+                sql = match_simple.group(1).strip()
+                # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle (ihtimal düşük ama garanti olsun)
+                sql = re.sub(r"^```sql\\s*|\\s*```$", "", sql, flags=re.IGNORECASE).strip()
+                logger.debug(f"Temizlenmiş yanıttan (basit arama) regex ile ayıklanan SQL: {sql}")
+                return sql
+            else:
+                logger.warning(f"Temizlenmiş yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı (her iki yöntemle de). Temizlenmiş Yanıt Başlangıcı: {cleaned_response[:500]}...")
+                return ""
 
     except Exception as e:
         logger.error(f"SQL sorgusu temizlenip/çıkarılırken hata oluştu: {str(e)}")
