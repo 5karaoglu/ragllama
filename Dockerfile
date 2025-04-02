@@ -47,5 +47,6 @@ RUN mkdir -p model_cache embedding_cache storage pdf_storage
 # Uygulama portunu aç
 EXPOSE 5000
 
-# Çalışma komutu
-CMD ["python", "rag_app.py"] 
+# Çalışma komutu (Gunicorn + Eventlet ile)
+CMD ["gunicorn", "-k", "eventlet", "-w", "1", "-b", "0.0.0.0:5000", "rag_app:app"]
+# Eski CMD: CMD ["python", "rag_app.py"] 

@@ -15,8 +15,8 @@ socketio_instance = None
 def initialize_websockets(app):
     """Flask-SocketIO örneğini oluşturur ve olayları tanımlar."""
     global socketio_instance
-    socketio_instance = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-    logger.info("Flask-SocketIO başlatıldı.")
+    socketio_instance = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    logger.info("Flask-SocketIO başlatıldı (async_mode=eventlet).")
 
     @socketio_instance.on('connect')
     def handle_connect():
