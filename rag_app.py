@@ -209,8 +209,9 @@ def initialize_app():
     embed_model = setup_embedding_model()
     
     # Global ayarları yapılandır
+    Settings.llm = llm
     Settings.embed_model = embed_model
-    logger.info("Embedding modeli global ayarlara atandı.")
+    logger.info("LLM ve Embedding modeli global ayarlara atandı.")
     
     # DB SQLDatabase nesnesini oluştur
     logger.info("DB SQLDatabase nesnesi oluşturuluyor...")
