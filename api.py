@@ -32,7 +32,8 @@ def setup_routes(app: Flask, pdf_query_engine, llama_debug_handler):
     @app.route('/api/status', methods=['GET'])
     def status():
         """API durumunu kontrol eder."""
-        is_sql_db_ready = sql_database is not None
+        # Check status via direct app attributes
+        is_sql_db_ready = hasattr(current_app, 'sql_database') and current_app.sql_database is not None
         return jsonify({
             "status": "online",
             "sql_database_ready": is_sql_db_ready,
@@ -42,12 +43,12 @@ def setup_routes(app: Flask, pdf_query_engine, llama_debug_handler):
     @app.route('/api/query', methods=['POST'])
     def query():
         """Kullanıcı sorgusunu işler ve yanıt döndürür."""
-        # Log the state of config at the beginning of the request
-        sql_db_from_config = current_app.config.get('SQL_DATABASE')
-        llm_from_config = current_app.config.get('LLM')
-        logger.debug(f"[/api/query] Request received. Checking config...")
-        logger.debug(f"[/api/query] SQL_DATABASE from config is None: {sql_db_from_config is None}")
-        logger.debug(f"[/api/query] LLM from config is None: {llm_from_config is None}")
+        # Log the state of app attributes at the beginning of the request
+        sql_db_from_app = getattr(current_app, 'sql_database', None)
+        llm_from_app = getattr(current_app, 'llm', None)
+        logger.debug(f"[/api/query] Request received. Checking app attributes...")
+        logger.debug(f"[/api/query] current_app.sql_database is None: {sql_db_from_app is None}")
+        logger.debug(f"[/api/query] current_app.llm is None: {llm_from_app is None}")
 
         try:
             data = request.json
@@ -65,12 +66,13 @@ def setup_routes(app: Flask, pdf_query_engine, llama_debug_handler):
             thought_process = []
             llm_response = None
             
-            # Access globals for DB query
-            current_sql_db = sql_database
-            current_llm = global_llm
-            
             if module == 'db':
+                # Get components directly from app attributes via current_app
+                current_sql_db = getattr(current_app, 'sql_database', None)
+                current_llm = getattr(current_app, 'llm', None)
+                
                 if current_sql_db is None or current_llm is None:
+                    logger.error("[/api/query] DB modülü için sql_database veya llm app nesnesinde bulunamadı!") # Updated log
                     return jsonify({"error": "Veritabanı veya LLM modülü henüz hazır değil"}), 503
                     
                 logger.info(f"DB modülü ile soru işleniyor: {user_query}")

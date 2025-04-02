@@ -203,24 +203,30 @@ def initialize_app():
     # Debug handler'ı kur
     setup_debug_handler()
     
-    # Modelleri yapılandır
+    # Modelleri yapılandır ve app nesnesine ekle
+    logger.info("LLM yapılandırılıyor...")
     llm = setup_llm()
-    global_llm = llm
-    embed_model = setup_embedding_model()
+    app.llm = llm
+    logger.info("LLM başarıyla yapılandırıldı ve app nesnesine eklendi.")
     
+    logger.info("Embedding modeli yapılandırılıyor...")
+    embed_model = setup_embedding_model()
+    logger.info("Embedding modeli başarıyla yapılandırıldı.")
+
     # Global ayarları yapılandır
-    Settings.llm = llm
+    Settings.llm = app.llm
     Settings.embed_model = embed_model
     logger.info("LLM ve Embedding modeli global ayarlara atandı.")
-    
-    # DB SQLDatabase nesnesini oluştur
+
+    # DB SQLDatabase nesnesini oluştur ve app nesnesine ekle
     logger.info("DB SQLDatabase nesnesi oluşturuluyor...")
-    sql_database = setup_db_query_engine("Book1.json")
-    logger.info("DB SQLDatabase nesnesi başarıyla oluşturuldu.")
-    
-    # PDF sorgu motorunu oluştur
+    sql_db = setup_db_query_engine("Book1.json")
+    app.sql_database = sql_db
+    logger.info("DB SQLDatabase nesnesi başarıyla oluşturuldu ve app nesnesine eklendi.")
+
+    # PDF sorgu motorunu oluştur (app nesnesinden LLM'i kullanarak)
     logger.info("PDF sorgu motoru oluşturuluyor...")
-    pdf_query_engine = setup_pdf_query_engine("document.pdf", global_llm, get_system_prompt('pdf'))
+    pdf_query_engine = setup_pdf_query_engine("document.pdf", app.llm, get_system_prompt('pdf'))
     logger.info("PDF sorgu motoru başarıyla oluşturuldu.")
     
     # API rotalarını ayarla
