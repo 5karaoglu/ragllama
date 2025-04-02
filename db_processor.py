@@ -227,9 +227,9 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
         table_name = list(sql_database.get_usable_table_names())[0]
         logger.debug(f"Kullanılacak tablo: {table_name}")
 
-        # Corrected method call to get table schema/info
-        context = sql_database.get_table_info([table_name])
-        logger.debug(f"Alınan tablo bilgisi (şema vb.):\n{context}") # Updated log message
+        # Try using get_schema_str() to get table schema/info
+        context = sql_database.get_schema_str([table_name]) 
+        logger.debug(f"Alınan şema bilgisi:\n{context}") # Updated log message
 
         # --- 2. Create SQL Generation Prompt --- 
         custom_sql_prompt_str = (
