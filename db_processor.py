@@ -102,22 +102,23 @@ def filter_llm_response_for_sql(llm_response: str) -> str:
         return ""
 
     try:
-        # SELECT ile başlayıp ; ile biten ilk ifadeyi ara (case-insensitive SELECT)
-        # .*? -> non-greedy match for anything between SELECT and ;
-        # re.DOTALL -> . karakterinin newline dahil her şeyi eşlemesini sağlar
-        # re.IGNORECASE -> SELECT ifadesini büyük/küçük harf duyarsız arar
-        # Corrected regex string literal and flags
-        match = re.search(r"SELECT.*?\;", llm_response, re.IGNORECASE | re.DOTALL)
+        # SELECT ile başlayıp ; ile biten **son** ifadeyi ara
+        # (?is) -> case-insensitive, dotall flags
+        # .*    -> match anything greedily (pushes towards the end)
+        # (SELECT.*?;) -> capture the SELECT ... ; block non-greedily
+        # \\s*   -> match trailing whitespace
+        # $     -> anchor to the end of the string
+        match = re.search(r"(?is).*(SELECT.*?;)\\s*$", llm_response)
 
         if match:
-            sql = match.group(0).strip()
+            # Capture group 1 contains the SQL
+            sql = match.group(1).strip() 
             # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle (ekstra güvenlik)
-            # Corrected regex string literal for cleaning
-            sql = re.sub(r"^```sql\s*|\s*```$", "", sql, flags=re.IGNORECASE).strip()
+            sql = re.sub(r"^```sql\\s*|\\s*```$", "", sql, flags=re.IGNORECASE).strip()
             logger.debug(f"Regex ile ayıklanan SQL: {sql}")
             return sql
-        else: # Corrected indentation/placement if needed, or just ensure it's correct
-            logger.warning(f"Yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Yanıt: {llm_response[:500]}...") # Log a snippet
+        else: 
+            logger.warning(f"Yanıt içinde sondaki 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Yanıt: {llm_response[:500]}...") # Log a snippet
             return ""
 
     except Exception as e:
