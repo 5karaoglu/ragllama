@@ -10,12 +10,13 @@ from flask import Flask, request, jsonify, current_app
 # Import the execution function and potentially the globals from rag_app
 from db_processor import execute_natural_language_query
 # Attempt to import globals from rag_app (adjust path if needed)
-try:
-    from rag_app import sql_database, global_llm
-except ImportError:
-    sql_database = None
-    global_llm = None
-    logging.warning("Could not import globals from rag_app directly in api.py")
+# try:
+#     from rag_app import sql_database, global_llm
+# except ImportError:
+#     sql_database = None
+#     global_llm = None
+#     logging.warning("Could not import globals from rag_app directly in api.py")
+# Bu blok kaldırıldı çünkü değişkenlere current_app üzerinden erişiliyor.
 
 logger = logging.getLogger(__name__)
 

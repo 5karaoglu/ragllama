@@ -3,6 +3,8 @@ import time
 import logging
 from typing import Dict, Any, List, Optional
 
+logger = logging.getLogger(__name__)
+
 try:
     import pynvml
     pynvml.nvmlInit()
@@ -17,8 +19,6 @@ except ImportError:
 except Exception as e:
     NVIDIA_SMI_AVAILABLE = False
     logger.error(f"pynvml başlatılırken beklenmedik hata: {e}")
-
-logger = logging.getLogger(__name__)
 
 def get_gpu_metrics() -> List[Dict[str, Any]]:
     """Her bir GPU için metrikleri toplar."""
