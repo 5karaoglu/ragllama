@@ -221,15 +221,23 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
     logger.info(f"Doğal dil sorgusu alınıyor: {user_query}")
 
     try:
-        # --- 1. Get Table Schema --- 
+        # --- 1. Get Table Schema using SQLAlchemy Inspect --- 
         if not sql_database.get_usable_table_names():
             raise ValueError("SQLDatabase içinde kullanılabilir tablo bulunamadı.")
         table_name = list(sql_database.get_usable_table_names())[0]
         logger.debug(f"Kullanılacak tablo: {table_name}")
 
-        # Try using get_schema_str() to get table schema/info
-        context = sql_database.get_schema_str([table_name]) 
-        logger.debug(f"Alınan şema bilgisi:\n{context}") # Updated log message
+        # Use SQLAlchemy inspect to get schema
+        engine = sql_database.engine
+        inspector = inspect(engine)
+        columns = inspector.get_columns(table_name)
+        
+        # Format schema string for the prompt
+        column_descriptions = []
+        for column in columns:
+            column_descriptions.append(f"{column['name']} ({str(column['type'])})")
+        context = f"Table '{table_name}' has columns: {', '.join(column_descriptions)}."
+        logger.debug(f"SQLAlchemy inspect ile alınan şema bilgisi:\n{context}")
 
         # --- 2. Create SQL Generation Prompt --- 
         custom_sql_prompt_str = (
@@ -243,11 +251,9 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
             "{schema}\n"
             "---------------------\n"
             "Soru: {query_str}\n"
-            # Corrected the final line with proper closing for the multi-line string literal
             "SQL Sorgusu (YALNIZCA tek bir geçerli SQL SELECT ifadesi yaz, başına veya sonuna başka HİÇBİR metin veya yorum EKLEME): "
         )
-        sql_generation_prompt = PromptTemplate(template=custom_sql_prompt_str) # Use template= kwarg
-
+        sql_generation_prompt = PromptTemplate(template=custom_sql_prompt_str)
         dialect = sql_database.dialect.name
         formatted_prompt = sql_generation_prompt.format(
             dialect=dialect, 
@@ -255,32 +261,25 @@ def execute_natural_language_query(sql_database: SQLDatabase, llm: LLM, user_que
             query_str=user_query
         )
         logger.debug(f"SQL üretimi için LLM'e gönderilecek prompt:\n{formatted_prompt}")
-
-        # --- 3. Call LLM to Generate SQL --- 
         logger.info("SQL sorgusu üretmek için LLM çağrılıyor...")
         llm_response = llm.complete(formatted_prompt)
         raw_sql_response = llm_response.text
         logger.debug(f"LLM'den ham SQL yanıtı alındı:\n{raw_sql_response}")
-
-        # --- 4. Filter the Response to Get Clean SQL --- 
         logger.info("LLM yanıtından SQL sorgusu ayıklanıyor...")
         clean_sql = filter_llm_response_for_sql(raw_sql_response)
-
         if not clean_sql:
             logger.error("LLM yanıtından geçerli SQL sorgusu ayıklanamadı.")
             return f"Üzgünüm, sorgunuzu SQL'e çeviremedim. LLM yanıtı: {raw_sql_response}"
-
-        # --- 5. Execute the SQL Query --- 
         logger.info(f"Ayıklanan SQL sorgusu çalıştırılıyor: {clean_sql}")
         try:
             sql_result = sql_database.run_sql(clean_sql)
             logger.info("SQL sorgu sonucu başarıyla alındı.")
             logger.debug(f"SQL Sonucu: {sql_result}")
-            return str(sql_result) # Ensure result is string
+            return str(sql_result)
         except Exception as sql_exec_error:
             logger.error(f"SQL sorgusu çalıştırılırken hata oluştu: {clean_sql}, Hata: {sql_exec_error}", exc_info=True)
-            return f"SQL sorgusu ({clean_sql}) çalıştırılırken bir hata oluştu: {sql_exec_error}" # Include SQL in error
-
+            return f"SQL sorgusu ({clean_sql}) çalıştırılırken bir hata oluştu: {sql_exec_error}"
+            
     except Exception as e:
         logger.error(f"Doğal dil sorgusu işlenirken genel hata: {e}", exc_info=True)
         return f"Sorgunuz işlenirken beklenmedik bir hata oluştu: {e}"
