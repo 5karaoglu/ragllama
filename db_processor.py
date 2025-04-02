@@ -96,29 +96,42 @@ def load_json_data(file_path: str) -> Dict[str, Any]:
 #         raise
 
 def filter_llm_response_for_sql(llm_response: str) -> str:
-    """LLM yanıtından ilk geçerli SQL SELECT ifadesini regex kullanarak çıkarır."""
+    """LLM yanıtından ilk geçerli SQL SELECT ifadesini çıkarır.
+    Önce </think> etiketine kadar olan kısmı temizler.
+    """
     if not llm_response or not isinstance(llm_response, str):
         logger.warning("filter_llm_response_for_sql: Geçersiz veya boş yanıt alındı.")
         return ""
 
+    cleaned_response = llm_response
     try:
-        # SELECT ile başlayıp ; ile biten TÜM ifadeleri bul (case-insensitive, dotall)
-        # \bSELECT\b -> Tam "SELECT" kelimesini eşleştir
-        matches = re.findall(r"(?is)(\bSELECT\b.*?;)", llm_response)
+        # </think> etiketini bul
+        think_end_tag = "</think>"
+        tag_index = llm_response.find(think_end_tag)
+        if tag_index != -1:
+            # Etiketten sonrasını al
+            cleaned_response = llm_response[tag_index + len(think_end_tag):].strip()
+            logger.debug(f"'</think>' etiketi sonrası temizlenmiş yanıt: {cleaned_response[:100]}...")
+        else:
+            logger.debug("'</think>' etiketi bulunamadı, orijinal yanıt kullanılıyor.")
 
-        if matches:
-            # Bulunan son eşleşmeyi al
-            sql = matches[-1].strip()
-            # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle (ekstra güvenlik)
+        # Temizlenmiş yanıtta ilk SELECT ... ; ifadesini ara
+        # (?is) -> case-insensitive, dotall
+        match = re.search(r"(?is)(\bSELECT\b.*?;)", cleaned_response)
+
+        if match:
+            # İlk yakalanan grup (tüm SELECT ifadesi)
+            sql = match.group(1).strip()
+            # Başında/sonunda olabilecek ```sql ve ``` gibi işaretleri temizle
             sql = re.sub(r"^```sql\\s*|\\s*```$", "", sql, flags=re.IGNORECASE).strip()
-            logger.debug(f"Regex (findall) ile ayıklanan SQL: {sql}")
+            logger.debug(f"Temizlenmiş yanıttan regex ile ayıklanan SQL: {sql}")
             return sql
         else:
-            logger.warning(f"Yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı (findall). Yanıt: {llm_response[:500]}...")
+            logger.warning(f"Temizlenmiş yanıt içinde 'SELECT ... ;' kalıbında SQL sorgusu bulunamadı. Temizlenmiş Yanıt Başlangıcı: {cleaned_response[:500]}...")
             return ""
 
     except Exception as e:
-        logger.error(f"SQL sorgusu regex ile çıkarılırken hata oluştu: {str(e)}")
+        logger.error(f"SQL sorgusu temizlenip/çıkarılırken hata oluştu: {str(e)}")
         return ""
 
 # --- Rewritten setup_db_query_engine using SQLAlchemy exclusively ---
