@@ -4,7 +4,7 @@ API endpoint'leri için Flask rotaları.
 
 import logging
 from typing import Dict, Any, List
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, current_app
 # Removed CallbackManager, types - no longer needed here for DB part
 
 # Import the execution function and potentially the globals from rag_app
@@ -42,6 +42,13 @@ def setup_routes(app: Flask, pdf_query_engine, llama_debug_handler):
     @app.route('/api/query', methods=['POST'])
     def query():
         """Kullanıcı sorgusunu işler ve yanıt döndürür."""
+        # Log the state of config at the beginning of the request
+        sql_db_from_config = current_app.config.get('SQL_DATABASE')
+        llm_from_config = current_app.config.get('LLM')
+        logger.debug(f"[/api/query] Request received. Checking config...")
+        logger.debug(f"[/api/query] SQL_DATABASE from config is None: {sql_db_from_config is None}")
+        logger.debug(f"[/api/query] LLM from config is None: {llm_from_config is None}")
+
         try:
             data = request.json
             user_query = data.get('query')
