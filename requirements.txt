@@ -15,8 +15,8 @@ sentence-transformers==4.0.1
 python-dotenv==1.0.0
 tqdm==4.66.1
 colorlog==6.7.0
-nvidia-ml-py3==7.352.0
-flask==2.3.3
+nvidia-ml-py3>=11.5.0
+flask>=2.0
 gunicorn==21.2.0
 PyPDF2==3.0.1
 safetensors==0.5.3
@@ -29,3 +29,5 @@ peft==0.15.1
 # xformers==0.0.22.post7
 # triton==2.1.0
 # flash-attn==2.4.2 
+Flask-SocketIO>=5.3.6
+psutil>=5.9.8 

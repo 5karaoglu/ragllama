@@ -6,9 +6,11 @@ import logging
 import colorlog
 import torch
 import gc
+import atexit
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from flask import Flask
+from flask_socketio import SocketIO
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from sentence_transformers import SentenceTransformer
 from bitsandbytes.nn import Linear4bit
@@ -24,9 +26,12 @@ from pdf_processor import setup_pdf_query_engine
 from db_processor import setup_db_query_engine
 from prompts import get_system_prompt
 from api import setup_routes
+from websockets import initialize_websockets
+from system_monitor import shutdown_pynvml
 
 # Flask uygulaması
 app = Flask(__name__)
+socketio = None
 
 # Global değişkenler
 sql_database = None
@@ -196,10 +201,18 @@ def setup_embedding_model():
 # Uygulama başlatma
 def initialize_app():
     """Uygulamayı başlatır ve gerekli bileşenleri yükler."""
-    global sql_database, global_llm, pdf_query_engine
+    global sql_database, global_llm, pdf_query_engine, socketio
     
     logger.info("RAG uygulaması başlatılıyor...")
     
+    # SocketIO'yu başlat (Flask app'i sarmalayarak)
+    socketio = initialize_websockets(app)
+    logger.info("WebSocket arayüzü başarıyla başlatıldı.")
+
+    # pynvml'yi uygulama kapanırken kapatmak için kaydet
+    atexit.register(shutdown_pynvml)
+    logger.info("pynvml kapatma fonksiyonu atexit ile kaydedildi.")
+
     # Debug handler'ı kur
     setup_debug_handler()
     
@@ -229,20 +242,22 @@ def initialize_app():
     pdf_query_engine = setup_pdf_query_engine("document.pdf", app.llm, get_system_prompt('pdf'))
     logger.info("PDF sorgu motoru başarıyla oluşturuldu.")
     
-    # API rotalarını ayarla
+    # API rotalarını ayarla (SocketIO'dan *sonra* yapılmalı)
     setup_routes(app, pdf_query_engine, llama_debug_handler)
     logger.info("API Rotaları ayarlandı.")
     
-    logger.info("RAG uygulaması başarıyla başlatıldı ve API hazır.")
+    logger.info("RAG uygulaması başarıyla başlatıldı ve API/WebSocket hazır.")
     return True
 
 if __name__ == "__main__":
     # Uygulamayı başlat
     success = initialize_app()
     
-    if success:
-        # Flask uygulamasını başlat
-        logger.info("API sunucusu başlatılıyor...")
-        app.run(host='0.0.0.0', port=5000)
+    if success and socketio:
+        # Flask uygulamasını SocketIO sunucusu üzerinden başlat
+        logger.info("SocketIO sunucusu başlatılıyor...")
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    elif success:
+        logger.error("SocketIO başlatılamadı, uygulama normal Flask ile çalıştırılamıyor.")
     else:
         logger.error("Uygulama başlatılamadı") 
